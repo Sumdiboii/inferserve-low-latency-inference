@@ -8,6 +8,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 option(INFERSERVE_ENABLE_ASAN "Enable AddressSanitizer" OFF)
 option(INFERSERVE_ENABLE_TSAN "Enable ThreadSanitizer" OFF)
+set(INFERSERVE_ONNXRUNTIME_ROOT "" CACHE PATH "Root of a locally installed ONNX Runtime CPU package")
 
 if(INFERSERVE_ENABLE_ASAN AND INFERSERVE_ENABLE_TSAN)
     message(FATAL_ERROR "AddressSanitizer and ThreadSanitizer cannot be enabled together")
@@ -36,6 +37,23 @@ endif()
 
 target_link_libraries(inferserve PRIVATE inferserve_warnings)
 
+if(INFERSERVE_ONNXRUNTIME_ROOT)
+    set(_inferserve_onnxruntime_root "${INFERSERVE_ONNXRUNTIME_ROOT}")
+else()
+    set(_inferserve_onnxruntime_root "${CMAKE_CURRENT_SOURCE_DIR}/third_party/onnxruntime-linux-x64-1.20.1")
+endif()
+find_path(INFERSERVE_ONNXRUNTIME_INCLUDE_DIR NAMES onnxruntime_c_api.h HINTS "${_inferserve_onnxruntime_root}/include" NO_DEFAULT_PATH)
+if(EXISTS "${_inferserve_onnxruntime_root}/lib/libonnxruntime.so.1.20.1")
+    set(INFERSERVE_ONNXRUNTIME_LIBRARY "${_inferserve_onnxruntime_root}/lib/libonnxruntime.so.1.20.1")
+endif()
+if(INFERSERVE_ONNXRUNTIME_INCLUDE_DIR AND INFERSERVE_ONNXRUNTIME_LIBRARY)
+    add_library(inferserve_onnxruntime UNKNOWN IMPORTED)
+    set_target_properties(inferserve_onnxruntime PROPERTIES IMPORTED_LOCATION "${INFERSERVE_ONNXRUNTIME_LIBRARY}" INTERFACE_INCLUDE_DIRECTORIES "${INFERSERVE_ONNXRUNTIME_INCLUDE_DIR}")
+    message(STATUS "Found ONNX Runtime: ${INFERSERVE_ONNXRUNTIME_LIBRARY}")
+else()
+    message(STATUS "ONNX Runtime not found; inference backend remains unavailable")
+endif()
+
 add_library(inferserve_sanitizers INTERFACE)
 target_link_libraries(inferserve PRIVATE inferserve_sanitizers)
 
@@ -50,7 +68,7 @@ if(BUILD_TESTING)
     FetchContent_Declare(
         googletest
         GIT_REPOSITORY https://github.com/google/googletest.git
-        GIT_TAG v1.15.2
+        GIT_TAG b514bdc898e2951020cbdca1304b75f5950d1f59 # v1.15.2
         GIT_SHALLOW TRUE
     )
     FetchContent_MakeAvailable(googletest)
