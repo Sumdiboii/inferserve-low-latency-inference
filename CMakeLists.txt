@@ -36,6 +36,36 @@ endif()
 
 target_link_libraries(inferserve PRIVATE inferserve_warnings)
 
+add_library(inferserve_sanitizers INTERFACE)
+target_link_libraries(inferserve PRIVATE inferserve_sanitizers)
+
+include(CTest)
+
+if(BUILD_TESTING)
+    include(FetchContent)
+
+    set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
+    set(BUILD_GMOCK OFF CACHE BOOL "" FORCE)
+
+    FetchContent_Declare(
+        googletest
+        GIT_REPOSITORY https://github.com/google/googletest.git
+        GIT_TAG v1.15.2
+        GIT_SHALLOW TRUE
+    )
+    FetchContent_MakeAvailable(googletest)
+
+    add_executable(inferserve_tests tests/smoke_test.cpp)
+    target_link_libraries(inferserve_tests PRIVATE
+        GTest::gtest_main
+        inferserve_warnings
+        inferserve_sanitizers
+    )
+
+    include(GoogleTest)
+    gtest_discover_tests(inferserve_tests)
+endif()
+
 if(INFERSERVE_ENABLE_ASAN OR INFERSERVE_ENABLE_TSAN)
     if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
         message(FATAL_ERROR "Sanitizer presets are supported only on Linux")
@@ -56,8 +86,8 @@ if(INFERSERVE_ENABLE_ASAN)
         message(FATAL_ERROR "The selected compiler does not support AddressSanitizer")
     endif()
 
-    target_compile_options(inferserve PRIVATE -fsanitize=address -fno-omit-frame-pointer)
-    target_link_options(inferserve PRIVATE -fsanitize=address)
+    target_compile_options(inferserve_sanitizers INTERFACE -fsanitize=address -fno-omit-frame-pointer)
+    target_link_options(inferserve_sanitizers INTERFACE -fsanitize=address)
 endif()
 
 if(INFERSERVE_ENABLE_TSAN)
@@ -68,6 +98,6 @@ if(INFERSERVE_ENABLE_TSAN)
         message(FATAL_ERROR "The selected compiler does not support ThreadSanitizer")
     endif()
 
-    target_compile_options(inferserve PRIVATE -fsanitize=thread -fno-omit-frame-pointer)
-    target_link_options(inferserve PRIVATE -fsanitize=thread)
+    target_compile_options(inferserve_sanitizers INTERFACE -fsanitize=thread -fno-omit-frame-pointer)
+    target_link_options(inferserve_sanitizers INTERFACE -fsanitize=thread)
 endif()
