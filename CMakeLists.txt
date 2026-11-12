@@ -20,6 +20,22 @@ set_target_properties(inferserve PROPERTIES
     CXX_EXTENSIONS OFF
 )
 
+add_library(inferserve_warnings INTERFACE)
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(inferserve_warnings INTERFACE
+        -Wall
+        -Wextra
+        -Wpedantic
+        -Werror
+    )
+elseif(MSVC)
+    target_compile_options(inferserve_warnings INTERFACE /W4 /WX)
+else()
+    message(FATAL_ERROR "Unsupported compiler for InferServe warning policy: ${CMAKE_CXX_COMPILER_ID}")
+endif()
+
+target_link_libraries(inferserve PRIVATE inferserve_warnings)
+
 if(INFERSERVE_ENABLE_ASAN OR INFERSERVE_ENABLE_TSAN)
     if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
         message(FATAL_ERROR "Sanitizer presets are supported only on Linux")
