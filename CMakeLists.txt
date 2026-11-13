@@ -20,6 +20,7 @@ set_target_properties(inferserve PROPERTIES
     CXX_STANDARD_REQUIRED ON
     CXX_EXTENSIONS OFF
 )
+target_include_directories(inferserve PRIVATE include)
 
 add_library(inferserve_warnings INTERFACE)
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
@@ -74,6 +75,7 @@ if(BUILD_TESTING)
     FetchContent_MakeAvailable(googletest)
 
     add_executable(inferserve_tests tests/smoke_test.cpp)
+    target_include_directories(inferserve_tests PRIVATE include)
     target_link_libraries(inferserve_tests PRIVATE
         GTest::gtest_main
         inferserve_warnings
