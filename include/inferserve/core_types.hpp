@@ -1,10 +1,19 @@
 #pragma once
 
+#include <chrono>
 #include <cstdint>
+#include <optional>
 #include <utility>
 #include <vector>
 
 namespace inferserve {
+
+using TimePoint = std::chrono::steady_clock::time_point;
+
+class MonotonicClock {
+public:
+    [[nodiscard]] TimePoint now() const { return std::chrono::steady_clock::now(); }
+};
 
 // A request identifier is deliberately not implicitly interchangeable with an integer.
 class RequestId {
@@ -32,6 +41,15 @@ using Data = std::vector<float>;
 struct Request {
     RequestId id;
     Data input;
+    TimePoint arrival;
+    std::optional<TimePoint> enqueued;
+    std::optional<TimePoint> batch_formed;
+    std::optional<TimePoint> exec_start;
+    std::optional<TimePoint> exec_end;
+    std::optional<TimePoint> completed;
+
+    Request(RequestId request_id, Data request_input)
+        : id(request_id), input(std::move(request_input)), arrival(MonotonicClock{}.now()) {}
 };
 
 struct Response {
