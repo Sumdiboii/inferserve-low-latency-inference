@@ -3,6 +3,7 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <future>
 #include <optional>
 #include <utility>
 #include <vector>
@@ -41,6 +42,18 @@ using Data = std::vector<float>;
 
 inline constexpr std::size_t kMaxInputSize = 4096;
 
+struct Response {
+    RequestId id;
+    Status status;
+    // Output is meaningful only for Success; failures always carry an empty output.
+    Data output;
+
+    Response(RequestId request_id, Status response_status, Data response_output = {})
+        : id(request_id),
+          status(response_status),
+          output(response_status == Status::Success ? std::move(response_output) : Data{}) {}
+};
+
 struct Request {
     RequestId id;
     Data input;
@@ -53,6 +66,18 @@ struct Request {
 
     Request(RequestId request_id, Data request_input)
         : id(request_id), input(std::move(request_input)), arrival(MonotonicClock{}.now()) {}
+
+    Request(const Request&) = delete;
+    Request& operator=(const Request&) = delete;
+    Request(Request&&) = default;
+    Request& operator=(Request&&) = default;
+
+    // The submitter obtains the future; the processing side fulfils it with the response.
+    [[nodiscard]] std::future<Response> get_future() { return completion_.get_future(); }
+    void complete(Response response) { completion_.set_value(std::move(response)); }
+
+private:
+    std::promise<Response> completion_;
 };
 
 // Admission validation only checks the basic size boundary; shape and value validation belong later.
@@ -64,17 +89,5 @@ struct Request {
 
     return Status::Success;
 }
-
-struct Response {
-    RequestId id;
-    Status status;
-    // Output is meaningful only for Success; failures always carry an empty output.
-    Data output;
-
-    Response(RequestId request_id, Status response_status, Data response_output = {})
-        : id(request_id),
-          status(response_status),
-          output(response_status == Status::Success ? std::move(response_output) : Data{}) {}
-};
 
 }  // namespace inferserve

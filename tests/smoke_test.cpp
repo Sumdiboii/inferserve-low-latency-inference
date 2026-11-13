@@ -123,6 +123,33 @@ TEST(CoreTypes, ValidationRejectsInputExceedingLimit)
     EXPECT_EQ(validate_request(request), Status::InvalidInput);
 }
 
+TEST(CoreTypes, RequestCompletionReturnsFulfilledResponse)
+{
+    Request request(RequestId(14), Data{1.0F});
+    std::future<Response> future = request.get_future();
+    const Response expected(request.id, Status::Success, Data{2.0F});
+
+    request.complete(expected);
+    const Response actual = future.get();
+
+    EXPECT_EQ(actual.id, request.id);
+    EXPECT_EQ(actual.status, Status::Success);
+    EXPECT_EQ(actual.output, expected.output);
+}
+
+TEST(CoreTypes, RequestCompletionSupportsFailedResponse)
+{
+    Request request(RequestId(15), Data{1.0F});
+    std::future<Response> future = request.get_future();
+
+    request.complete(Response(request.id, Status::BackendError));
+    const Response actual = future.get();
+
+    EXPECT_EQ(actual.id, request.id);
+    EXPECT_EQ(actual.status, Status::BackendError);
+    EXPECT_TRUE(actual.output.empty());
+}
+
 }  // namespace
 
 TEST(GoogleTestIntegration, DiscoversAndRuns)
