@@ -13,6 +13,8 @@ using inferserve::RequestId;
 using inferserve::Response;
 using inferserve::Status;
 using inferserve::TimePoint;
+using inferserve::kMaxInputSize;
+using inferserve::validate_request;
 
 TEST(CoreTypes, RequestIdDistinguishesIdentifiers)
 {
@@ -98,6 +100,27 @@ TEST(CoreTypes, RequestTimestampsCanBePopulatedChronologically)
     EXPECT_LE(*request.batch_formed, *request.exec_start);
     EXPECT_LE(*request.exec_start, *request.exec_end);
     EXPECT_LE(*request.exec_end, *request.completed);
+}
+
+TEST(CoreTypes, ValidationAcceptsNonEmptyInputWithinLimit)
+{
+    const Request request(RequestId(11), Data(kMaxInputSize, 1.0F));
+
+    EXPECT_EQ(validate_request(request), Status::Success);
+}
+
+TEST(CoreTypes, ValidationRejectsEmptyInput)
+{
+    const Request request(RequestId(12), Data{});
+
+    EXPECT_EQ(validate_request(request), Status::InvalidInput);
+}
+
+TEST(CoreTypes, ValidationRejectsInputExceedingLimit)
+{
+    const Request request(RequestId(13), Data(kMaxInputSize + 1, 1.0F));
+
+    EXPECT_EQ(validate_request(request), Status::InvalidInput);
 }
 
 }  // namespace

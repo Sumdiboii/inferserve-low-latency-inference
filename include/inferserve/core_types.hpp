@@ -1,6 +1,7 @@
 #pragma once
 
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <utility>
@@ -38,6 +39,8 @@ enum class Status {
 
 using Data = std::vector<float>;
 
+inline constexpr std::size_t kMaxInputSize = 4096;
+
 struct Request {
     RequestId id;
     Data input;
@@ -51,6 +54,16 @@ struct Request {
     Request(RequestId request_id, Data request_input)
         : id(request_id), input(std::move(request_input)), arrival(MonotonicClock{}.now()) {}
 };
+
+// Admission validation only checks the basic size boundary; shape and value validation belong later.
+[[nodiscard]] inline Status validate_request(const Request& request)
+{
+    if (request.input.empty() || request.input.size() > kMaxInputSize) {
+        return Status::InvalidInput;
+    }
+
+    return Status::Success;
+}
 
 struct Response {
     RequestId id;
