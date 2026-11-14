@@ -16,7 +16,8 @@ public:
     BoundedQueue(const BoundedQueue&) = delete;
     BoundedQueue& operator=(const BoundedQueue&) = delete;
 
-    [[nodiscard]] bool try_push(T value)
+    template <typename U>
+    [[nodiscard]] bool try_push(U&& value)
     {
         {
             std::lock_guard lock(mutex_);
@@ -24,7 +25,7 @@ public:
                 return false;
             }
 
-            queue_.push(std::move(value));
+            queue_.push(std::forward<U>(value));
         }
 
         not_empty_.notify_one();

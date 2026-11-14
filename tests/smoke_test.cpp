@@ -2,6 +2,7 @@
 
 #include <inferserve/bounded_queue.hpp>
 #include <inferserve/core_types.hpp>
+#include <inferserve/request_admission.hpp>
 
 #include <vector>
 
@@ -11,6 +12,7 @@ using inferserve::Data;
 using inferserve::BoundedQueue;
 using inferserve::MonotonicClock;
 using inferserve::Request;
+using inferserve::RequestAdmission;
 using inferserve::RequestId;
 using inferserve::Response;
 using inferserve::Status;
@@ -218,4 +220,54 @@ TEST(BoundedQueue, SupportsMoveOnlyRequests)
 
     popped.complete(Response(popped.id, Status::Success));
     EXPECT_EQ(future.get().status, Status::Success);
+}
+
+TEST(RequestAdmission, AcceptsRequestWhenCapacityIsAvailable)
+{
+    RequestAdmission admission(1);
+    Request request(RequestId(18), Data{1.0F});
+    std::future<Response> future = request.get_future();
+
+    EXPECT_EQ(admission.admit(std::move(request)), Status::Success);
+
+    Request queued = admission.pop();
+    queued.complete(Response(queued.id, Status::Success));
+    EXPECT_EQ(future.get().status, Status::Success);
+}
+
+TEST(RequestAdmission, RejectsFullQueueWithoutRemovingExistingRequest)
+{
+    RequestAdmission admission(1);
+    Request first(RequestId(19), Data{1.0F});
+    Request rejected(RequestId(20), Data{2.0F});
+    std::future<Response> first_future = first.get_future();
+    std::future<Response> rejected_future = rejected.get_future();
+
+    ASSERT_EQ(admission.admit(std::move(first)), Status::Success);
+    EXPECT_EQ(admission.admit(std::move(rejected)), Status::QueueFull);
+    EXPECT_EQ(rejected_future.get().status, Status::QueueFull);
+
+    Request queued = admission.pop();
+    EXPECT_EQ(queued.id, RequestId(19));
+    queued.complete(Response(queued.id, Status::Success));
+    EXPECT_EQ(first_future.get().status, Status::Success);
+}
+
+TEST(RequestAdmission, AcceptsRequestAfterCapacityBecomesAvailable)
+{
+    RequestAdmission admission(1);
+    Request first(RequestId(21), Data{1.0F});
+    Request second(RequestId(22), Data{2.0F});
+    std::future<Response> first_future = first.get_future();
+    std::future<Response> second_future = second.get_future();
+
+    ASSERT_EQ(admission.admit(std::move(first)), Status::Success);
+    Request queued = admission.pop();
+    queued.complete(Response(queued.id, Status::Success));
+    EXPECT_EQ(first_future.get().status, Status::Success);
+
+    EXPECT_EQ(admission.admit(std::move(second)), Status::Success);
+    queued = admission.pop();
+    queued.complete(Response(queued.id, Status::Success));
+    EXPECT_EQ(second_future.get().status, Status::Success);
 }
