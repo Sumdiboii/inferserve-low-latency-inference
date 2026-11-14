@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <inferserve/bounded_queue.hpp>
 #include <inferserve/core_types.hpp>
 
 #include <vector>
@@ -7,6 +8,7 @@
 namespace {
 
 using inferserve::Data;
+using inferserve::BoundedQueue;
 using inferserve::MonotonicClock;
 using inferserve::Request;
 using inferserve::RequestId;
@@ -155,4 +157,65 @@ TEST(CoreTypes, RequestCompletionSupportsFailedResponse)
 TEST(GoogleTestIntegration, DiscoversAndRuns)
 {
     EXPECT_EQ(1 + 1, 2);
+}
+
+TEST(BoundedQueue, PreservesFifoOrder)
+{
+    BoundedQueue<int> queue(3);
+
+    EXPECT_TRUE(queue.try_push(1));
+    EXPECT_TRUE(queue.try_push(2));
+    EXPECT_TRUE(queue.try_push(3));
+
+    int value = 0;
+    ASSERT_TRUE(queue.try_pop(value));
+    EXPECT_EQ(value, 1);
+    ASSERT_TRUE(queue.try_pop(value));
+    EXPECT_EQ(value, 2);
+    ASSERT_TRUE(queue.try_pop(value));
+    EXPECT_EQ(value, 3);
+}
+
+TEST(BoundedQueue, RejectsInsertionWhenFull)
+{
+    BoundedQueue<int> queue(2);
+
+    EXPECT_TRUE(queue.try_push(1));
+    EXPECT_TRUE(queue.try_push(2));
+    EXPECT_FALSE(queue.try_push(3));
+    EXPECT_EQ(queue.capacity(), 2U);
+}
+
+TEST(BoundedQueue, ReportsEmptyQueue)
+{
+    BoundedQueue<int> queue(1);
+    int value = 0;
+
+    EXPECT_FALSE(queue.try_pop(value));
+}
+
+TEST(BoundedQueue, BlockingPopRetrievesItemWhenAvailable)
+{
+    BoundedQueue<int> queue(1);
+    std::future<int> popped = std::async(std::launch::async, [&queue] { return queue.pop(); });
+
+    EXPECT_TRUE(queue.try_push(42));
+    EXPECT_EQ(popped.get(), 42);
+}
+
+TEST(BoundedQueue, SupportsMoveOnlyRequests)
+{
+    BoundedQueue<Request> queue(1);
+    Request request(RequestId(16), Data{1.0F});
+    std::future<Response> future = request.get_future();
+
+    ASSERT_TRUE(queue.try_push(std::move(request)));
+
+    Request popped(RequestId(17), Data{});
+    ASSERT_TRUE(queue.try_pop(popped));
+    EXPECT_EQ(popped.id, RequestId(16));
+    EXPECT_EQ(popped.input, Data({1.0F}));
+
+    popped.complete(Response(popped.id, Status::Success));
+    EXPECT_EQ(future.get().status, Status::Success);
 }
