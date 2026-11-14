@@ -4,6 +4,8 @@
 #include <inferserve/core_types.hpp>
 #include <inferserve/request_admission.hpp>
 
+#include <chrono>
+#include <optional>
 #include <vector>
 
 namespace {
@@ -203,6 +205,39 @@ TEST(BoundedQueue, BlockingPopRetrievesItemWhenAvailable)
 
     EXPECT_TRUE(queue.try_push(42));
     EXPECT_EQ(popped.get(), 42);
+}
+
+TEST(BoundedQueue, TimedPopRetrievesItemWhenAvailable)
+{
+    BoundedQueue<int> queue(1);
+    std::future<std::optional<int>> popped =
+        std::async(std::launch::async, [&queue] { return queue.pop_for(std::chrono::seconds(1)); });
+
+    EXPECT_TRUE(queue.try_push(42));
+    const std::optional<int> result = popped.get();
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(*result, 42);
+}
+
+TEST(BoundedQueue, TimedPopReturnsEmptyAfterTimeout)
+{
+    BoundedQueue<int> queue(1);
+
+    EXPECT_FALSE(queue.pop_for(std::chrono::milliseconds(20)).has_value());
+}
+
+TEST(BoundedQueue, TimedPopPreservesFifoOrder)
+{
+    BoundedQueue<int> queue(2);
+    ASSERT_TRUE(queue.try_push(1));
+    ASSERT_TRUE(queue.try_push(2));
+
+    const std::optional<int> first = queue.pop_for(std::chrono::milliseconds(20));
+    const std::optional<int> second = queue.pop_for(std::chrono::milliseconds(20));
+    ASSERT_TRUE(first.has_value());
+    ASSERT_TRUE(second.has_value());
+    EXPECT_EQ(*first, 1);
+    EXPECT_EQ(*second, 2);
 }
 
 TEST(BoundedQueue, SupportsMoveOnlyRequests)

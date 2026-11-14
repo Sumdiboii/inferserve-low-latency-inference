@@ -1,8 +1,10 @@
 #pragma once
 
+#include <chrono>
 #include <condition_variable>
 #include <cstddef>
 #include <mutex>
+#include <optional>
 #include <queue>
 #include <utility>
 
@@ -52,6 +54,21 @@ public:
     {
         std::unique_lock lock(mutex_);
         not_empty_.wait(lock, [this] { return !queue_.empty(); });
+
+        T value = std::move(queue_.front());
+        queue_.pop();
+        lock.unlock();
+        not_full_.notify_one();
+        return value;
+    }
+
+    template <typename Rep, typename Period>
+    [[nodiscard]] std::optional<T> pop_for(std::chrono::duration<Rep, Period> timeout)
+    {
+        std::unique_lock lock(mutex_);
+        if (!not_empty_.wait_for(lock, timeout, [this] { return !queue_.empty(); })) {
+            return std::nullopt;
+        }
 
         T value = std::move(queue_.front());
         queue_.pop();
