@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <optional>
 #include <utility>
 
 #include <inferserve/bounded_queue.hpp>
@@ -28,7 +29,7 @@ public:
         return Status::Success;
     }
 
-    [[nodiscard]] Request pop() { return queue_.pop(); }
+    [[nodiscard]] std::optional<Request> pop() { return queue_.pop(); }
 
 private:
     BoundedQueue<Request> queue_;

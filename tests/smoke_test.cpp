@@ -201,10 +201,13 @@ TEST(BoundedQueue, ReportsEmptyQueue)
 TEST(BoundedQueue, BlockingPopRetrievesItemWhenAvailable)
 {
     BoundedQueue<int> queue(1);
-    std::future<int> popped = std::async(std::launch::async, [&queue] { return queue.pop(); });
+    std::future<std::optional<int>> popped =
+        std::async(std::launch::async, [&queue] { return queue.pop(); });
 
     EXPECT_TRUE(queue.try_push(42));
-    EXPECT_EQ(popped.get(), 42);
+    const std::optional<int> result = popped.get();
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(*result, 42);
 }
 
 TEST(BoundedQueue, TimedPopRetrievesItemWhenAvailable)
@@ -257,6 +260,66 @@ TEST(BoundedQueue, SupportsMoveOnlyRequests)
     EXPECT_EQ(future.get().status, Status::Success);
 }
 
+TEST(BoundedQueue, RejectsPushesAfterShutdown)
+{
+    BoundedQueue<int> queue(1);
+    queue.shutdown();
+    queue.shutdown();
+
+    EXPECT_FALSE(queue.try_push(42));
+}
+
+TEST(BoundedQueue, DrainsItemsAfterShutdown)
+{
+    BoundedQueue<int> queue(2);
+    ASSERT_TRUE(queue.try_push(1));
+    ASSERT_TRUE(queue.try_push(2));
+    queue.shutdown();
+
+    const std::optional<int> first = queue.pop();
+    const std::optional<int> second = queue.pop();
+    const std::optional<int> empty = queue.pop();
+    ASSERT_TRUE(first.has_value());
+    ASSERT_TRUE(second.has_value());
+    EXPECT_EQ(*first, 1);
+    EXPECT_EQ(*second, 2);
+    EXPECT_FALSE(empty.has_value());
+}
+
+TEST(BoundedQueue, BlockingPopWakesOnShutdown)
+{
+    BoundedQueue<int> queue(1);
+    std::promise<void> started;
+    std::future<void> started_future = started.get_future();
+    std::future<std::optional<int>> popped = std::async(
+        std::launch::async, [&queue, &started] {
+            started.set_value();
+            return queue.pop();
+        });
+
+    started_future.get();
+    queue.shutdown();
+
+    EXPECT_FALSE(popped.get().has_value());
+}
+
+TEST(BoundedQueue, TimedPopWakesOnShutdown)
+{
+    BoundedQueue<int> queue(1);
+    std::promise<void> started;
+    std::future<void> started_future = started.get_future();
+    std::future<std::optional<int>> popped = std::async(
+        std::launch::async, [&queue, &started] {
+            started.set_value();
+            return queue.pop_for(std::chrono::seconds(1));
+        });
+
+    started_future.get();
+    queue.shutdown();
+
+    EXPECT_FALSE(popped.get().has_value());
+}
+
 TEST(RequestAdmission, AcceptsRequestWhenCapacityIsAvailable)
 {
     RequestAdmission admission(1);
@@ -265,8 +328,9 @@ TEST(RequestAdmission, AcceptsRequestWhenCapacityIsAvailable)
 
     EXPECT_EQ(admission.admit(std::move(request)), Status::Success);
 
-    Request queued = admission.pop();
-    queued.complete(Response(queued.id, Status::Success));
+    std::optional<Request> queued = admission.pop();
+    ASSERT_TRUE(queued.has_value());
+    queued->complete(Response(queued->id, Status::Success));
     EXPECT_EQ(future.get().status, Status::Success);
 }
 
@@ -282,9 +346,10 @@ TEST(RequestAdmission, RejectsFullQueueWithoutRemovingExistingRequest)
     EXPECT_EQ(admission.admit(std::move(rejected)), Status::QueueFull);
     EXPECT_EQ(rejected_future.get().status, Status::QueueFull);
 
-    Request queued = admission.pop();
-    EXPECT_EQ(queued.id, RequestId(19));
-    queued.complete(Response(queued.id, Status::Success));
+    std::optional<Request> queued = admission.pop();
+    ASSERT_TRUE(queued.has_value());
+    EXPECT_EQ(queued->id, RequestId(19));
+    queued->complete(Response(queued->id, Status::Success));
     EXPECT_EQ(first_future.get().status, Status::Success);
 }
 
@@ -297,12 +362,14 @@ TEST(RequestAdmission, AcceptsRequestAfterCapacityBecomesAvailable)
     std::future<Response> second_future = second.get_future();
 
     ASSERT_EQ(admission.admit(std::move(first)), Status::Success);
-    Request queued = admission.pop();
-    queued.complete(Response(queued.id, Status::Success));
+    std::optional<Request> queued = admission.pop();
+    ASSERT_TRUE(queued.has_value());
+    queued->complete(Response(queued->id, Status::Success));
     EXPECT_EQ(first_future.get().status, Status::Success);
 
     EXPECT_EQ(admission.admit(std::move(second)), Status::Success);
     queued = admission.pop();
-    queued.complete(Response(queued.id, Status::Success));
+    ASSERT_TRUE(queued.has_value());
+    queued->complete(Response(queued->id, Status::Success));
     EXPECT_EQ(second_future.get().status, Status::Success);
 }
