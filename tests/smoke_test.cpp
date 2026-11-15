@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <inferserve/backend.hpp>
 #include <inferserve/bounded_queue.hpp>
 #include <inferserve/core_types.hpp>
 #include <inferserve/request_admission.hpp>
@@ -16,7 +17,10 @@
 namespace {
 
 using inferserve::Data;
+using inferserve::Backend;
+using inferserve::Batch;
 using inferserve::BoundedQueue;
+using inferserve::InferenceResults;
 using inferserve::MonotonicClock;
 using inferserve::Request;
 using inferserve::RequestAdmission;
@@ -26,6 +30,24 @@ using inferserve::Status;
 using inferserve::TimePoint;
 using inferserve::kMaxInputSize;
 using inferserve::validate_request;
+
+class TestBackend final : public Backend {
+public:
+    void load() override { loaded_ = true; }
+
+    [[nodiscard]] InferenceResults infer(const Batch& batch) override
+    {
+        EXPECT_TRUE(loaded_);
+        return batch;
+    }
+
+    [[nodiscard]] std::size_t max_batch_size() const override { return 4; }
+
+    [[nodiscard]] std::string_view name() const noexcept override { return "test"; }
+
+private:
+    bool loaded_ = false;
+};
 
 TEST(CoreTypes, RequestIdDistinguishesIdentifiers)
 {
@@ -166,6 +188,19 @@ TEST(CoreTypes, RequestCompletionSupportsFailedResponse)
 TEST(GoogleTestIntegration, DiscoversAndRuns)
 {
     EXPECT_EQ(1 + 1, 2);
+}
+
+TEST(Backend, ExposesLoadInferenceAndMetadataContract)
+{
+    TestBackend backend;
+    const Batch batch{Data{1.0F, 2.0F}, Data{3.0F}};
+
+    EXPECT_EQ(backend.name(), "test");
+    EXPECT_EQ(backend.max_batch_size(), 4U);
+
+    backend.load();
+    const InferenceResults results = backend.infer(batch);
+    EXPECT_EQ(results, batch);
 }
 
 TEST(BoundedQueue, PreservesFifoOrder)
