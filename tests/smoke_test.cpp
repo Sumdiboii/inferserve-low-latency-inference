@@ -1,14 +1,25 @@
 #include <gtest/gtest.h>
 
+#include <inferserve/bounded_queue.hpp>
 #include <inferserve/core_types.hpp>
+#include <inferserve/request_admission.hpp>
 
+#include <algorithm>
+#include <chrono>
+#include <cstdlib>
+#include <future>
+#include <mutex>
+#include <optional>
+#include <thread>
 #include <vector>
 
 namespace {
 
 using inferserve::Data;
+using inferserve::BoundedQueue;
 using inferserve::MonotonicClock;
 using inferserve::Request;
+using inferserve::RequestAdmission;
 using inferserve::RequestId;
 using inferserve::Response;
 using inferserve::Status;
@@ -155,4 +166,289 @@ TEST(CoreTypes, RequestCompletionSupportsFailedResponse)
 TEST(GoogleTestIntegration, DiscoversAndRuns)
 {
     EXPECT_EQ(1 + 1, 2);
+}
+
+TEST(BoundedQueue, PreservesFifoOrder)
+{
+    BoundedQueue<int> queue(3);
+
+    EXPECT_TRUE(queue.try_push(1));
+    EXPECT_TRUE(queue.try_push(2));
+    EXPECT_TRUE(queue.try_push(3));
+
+    int value = 0;
+    ASSERT_TRUE(queue.try_pop(value));
+    EXPECT_EQ(value, 1);
+    ASSERT_TRUE(queue.try_pop(value));
+    EXPECT_EQ(value, 2);
+    ASSERT_TRUE(queue.try_pop(value));
+    EXPECT_EQ(value, 3);
+}
+
+TEST(BoundedQueue, RejectsInsertionWhenFull)
+{
+    BoundedQueue<int> queue(2);
+
+    EXPECT_TRUE(queue.try_push(1));
+    EXPECT_TRUE(queue.try_push(2));
+    EXPECT_FALSE(queue.try_push(3));
+    EXPECT_EQ(queue.capacity(), 2U);
+}
+
+TEST(BoundedQueue, ReportsEmptyQueue)
+{
+    BoundedQueue<int> queue(1);
+    int value = 0;
+
+    EXPECT_FALSE(queue.try_pop(value));
+}
+
+TEST(BoundedQueue, BlockingPopRetrievesItemWhenAvailable)
+{
+    BoundedQueue<int> queue(1);
+    std::future<std::optional<int>> popped =
+        std::async(std::launch::async, [&queue] { return queue.pop(); });
+
+    EXPECT_TRUE(queue.try_push(42));
+    const std::optional<int> result = popped.get();
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(*result, 42);
+}
+
+TEST(BoundedQueue, TimedPopRetrievesItemWhenAvailable)
+{
+    BoundedQueue<int> queue(1);
+    std::future<std::optional<int>> popped =
+        std::async(std::launch::async, [&queue] { return queue.pop_for(std::chrono::seconds(1)); });
+
+    EXPECT_TRUE(queue.try_push(42));
+    const std::optional<int> result = popped.get();
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(*result, 42);
+}
+
+TEST(BoundedQueue, TimedPopReturnsEmptyAfterTimeout)
+{
+    BoundedQueue<int> queue(1);
+
+    EXPECT_FALSE(queue.pop_for(std::chrono::milliseconds(20)).has_value());
+}
+
+TEST(BoundedQueue, TimedPopPreservesFifoOrder)
+{
+    BoundedQueue<int> queue(2);
+    ASSERT_TRUE(queue.try_push(1));
+    ASSERT_TRUE(queue.try_push(2));
+
+    const std::optional<int> first = queue.pop_for(std::chrono::milliseconds(20));
+    const std::optional<int> second = queue.pop_for(std::chrono::milliseconds(20));
+    ASSERT_TRUE(first.has_value());
+    ASSERT_TRUE(second.has_value());
+    EXPECT_EQ(*first, 1);
+    EXPECT_EQ(*second, 2);
+}
+
+TEST(BoundedQueue, SupportsMoveOnlyRequests)
+{
+    BoundedQueue<Request> queue(1);
+    Request request(RequestId(16), Data{1.0F});
+    std::future<Response> future = request.get_future();
+
+    ASSERT_TRUE(queue.try_push(std::move(request)));
+
+    Request popped(RequestId(17), Data{});
+    ASSERT_TRUE(queue.try_pop(popped));
+    EXPECT_EQ(popped.id, RequestId(16));
+    EXPECT_EQ(popped.input, Data({1.0F}));
+
+    popped.complete(Response(popped.id, Status::Success));
+    EXPECT_EQ(future.get().status, Status::Success);
+}
+
+TEST(BoundedQueue, RejectsPushesAfterShutdown)
+{
+    BoundedQueue<int> queue(1);
+    queue.shutdown();
+    queue.shutdown();
+
+    EXPECT_FALSE(queue.try_push(42));
+}
+
+TEST(BoundedQueue, DrainsItemsAfterShutdown)
+{
+    BoundedQueue<int> queue(2);
+    ASSERT_TRUE(queue.try_push(1));
+    ASSERT_TRUE(queue.try_push(2));
+    queue.shutdown();
+
+    const std::optional<int> first = queue.pop();
+    const std::optional<int> second = queue.pop();
+    const std::optional<int> empty = queue.pop();
+    ASSERT_TRUE(first.has_value());
+    ASSERT_TRUE(second.has_value());
+    EXPECT_EQ(*first, 1);
+    EXPECT_EQ(*second, 2);
+    EXPECT_FALSE(empty.has_value());
+}
+
+TEST(BoundedQueue, BlockingPopWakesOnShutdown)
+{
+    BoundedQueue<int> queue(1);
+    std::promise<void> started;
+    std::future<void> started_future = started.get_future();
+    std::future<std::optional<int>> popped = std::async(
+        std::launch::async, [&queue, &started] {
+            started.set_value();
+            return queue.pop();
+        });
+
+    started_future.get();
+    queue.shutdown();
+
+    EXPECT_FALSE(popped.get().has_value());
+}
+
+TEST(BoundedQueue, TimedPopWakesOnShutdown)
+{
+    BoundedQueue<int> queue(1);
+    std::promise<void> started;
+    std::future<void> started_future = started.get_future();
+    std::future<std::optional<int>> popped = std::async(
+        std::launch::async, [&queue, &started] {
+            started.set_value();
+            return queue.pop_for(std::chrono::seconds(1));
+        });
+
+    started_future.get();
+    queue.shutdown();
+
+    EXPECT_FALSE(popped.get().has_value());
+}
+
+TEST(BoundedQueue, SupportsRepeatedMpmcProductionAndConsumption)
+{
+    constexpr int producer_count = 4;
+    constexpr int consumer_count = 4;
+    constexpr int items_per_producer = 100;
+    constexpr int default_repetitions = 20;
+    constexpr std::size_t queue_capacity = 8;
+    constexpr int items_per_round = producer_count * items_per_producer;
+    int repetitions = default_repetitions;
+    if (const char* configured_repetitions = std::getenv("INFERSERVE_MPMC_REPETITIONS");
+        configured_repetitions != nullptr) {
+        const int parsed_repetitions = std::atoi(configured_repetitions);
+        if (parsed_repetitions > 0) {
+            repetitions = parsed_repetitions;
+        }
+    }
+
+    for (int repetition = 0; repetition < repetitions; ++repetition) {
+        BoundedQueue<int> queue(queue_capacity);
+        std::mutex consumed_mutex;
+        std::vector<int> consumed;
+        consumed.reserve(items_per_round);
+
+        std::promise<void> start_promise;
+        const std::shared_future<void> start = start_promise.get_future().share();
+        std::vector<std::thread> producers;
+        std::vector<std::thread> consumers;
+        producers.reserve(producer_count);
+        consumers.reserve(consumer_count);
+
+        for (int consumer = 0; consumer < consumer_count; ++consumer) {
+            consumers.emplace_back([&queue, &consumed, &consumed_mutex, start] {
+                start.wait();
+                while (true) {
+                    const std::optional<int> item = queue.pop();
+                    if (!item.has_value()) {
+                        return;
+                    }
+
+                    std::lock_guard lock(consumed_mutex);
+                    consumed.push_back(*item);
+                }
+            });
+        }
+
+        for (int producer = 0; producer < producer_count; ++producer) {
+            producers.emplace_back([&queue, start, producer] {
+                start.wait();
+                for (int item = 0; item < items_per_producer; ++item) {
+                    const int id = producer * items_per_producer + item;
+                    while (!queue.try_push(id)) {
+                        std::this_thread::yield();
+                    }
+                }
+            });
+        }
+
+        start_promise.set_value();
+        for (std::thread& producer : producers) {
+            producer.join();
+        }
+        queue.shutdown();
+        for (std::thread& consumer : consumers) {
+            consumer.join();
+        }
+
+        ASSERT_EQ(consumed.size(), static_cast<std::size_t>(items_per_round));
+        std::sort(consumed.begin(), consumed.end());
+        for (int id = 0; id < items_per_round; ++id) {
+            EXPECT_EQ(consumed[static_cast<std::size_t>(id)], id);
+        }
+    }
+}
+
+TEST(RequestAdmission, AcceptsRequestWhenCapacityIsAvailable)
+{
+    RequestAdmission admission(1);
+    Request request(RequestId(18), Data{1.0F});
+    std::future<Response> future = request.get_future();
+
+    EXPECT_EQ(admission.admit(std::move(request)), Status::Success);
+
+    std::optional<Request> queued = admission.pop();
+    ASSERT_TRUE(queued.has_value());
+    queued->complete(Response(queued->id, Status::Success));
+    EXPECT_EQ(future.get().status, Status::Success);
+}
+
+TEST(RequestAdmission, RejectsFullQueueWithoutRemovingExistingRequest)
+{
+    RequestAdmission admission(1);
+    Request first(RequestId(19), Data{1.0F});
+    Request rejected(RequestId(20), Data{2.0F});
+    std::future<Response> first_future = first.get_future();
+    std::future<Response> rejected_future = rejected.get_future();
+
+    ASSERT_EQ(admission.admit(std::move(first)), Status::Success);
+    EXPECT_EQ(admission.admit(std::move(rejected)), Status::QueueFull);
+    EXPECT_EQ(rejected_future.get().status, Status::QueueFull);
+
+    std::optional<Request> queued = admission.pop();
+    ASSERT_TRUE(queued.has_value());
+    EXPECT_EQ(queued->id, RequestId(19));
+    queued->complete(Response(queued->id, Status::Success));
+    EXPECT_EQ(first_future.get().status, Status::Success);
+}
+
+TEST(RequestAdmission, AcceptsRequestAfterCapacityBecomesAvailable)
+{
+    RequestAdmission admission(1);
+    Request first(RequestId(21), Data{1.0F});
+    Request second(RequestId(22), Data{2.0F});
+    std::future<Response> first_future = first.get_future();
+    std::future<Response> second_future = second.get_future();
+
+    ASSERT_EQ(admission.admit(std::move(first)), Status::Success);
+    std::optional<Request> queued = admission.pop();
+    ASSERT_TRUE(queued.has_value());
+    queued->complete(Response(queued->id, Status::Success));
+    EXPECT_EQ(first_future.get().status, Status::Success);
+
+    EXPECT_EQ(admission.admit(std::move(second)), Status::Success);
+    queued = admission.pop();
+    ASSERT_TRUE(queued.has_value());
+    queued->complete(Response(queued->id, Status::Success));
+    EXPECT_EQ(second_future.get().status, Status::Success);
 }
