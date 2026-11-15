@@ -4,6 +4,7 @@
 #include <inferserve/bounded_queue.hpp>
 #include <inferserve/core_types.hpp>
 #include <inferserve/request_admission.hpp>
+#include <inferserve/synthetic_backend.hpp>
 
 #include <algorithm>
 #include <chrono>
@@ -27,6 +28,7 @@ using inferserve::RequestAdmission;
 using inferserve::RequestId;
 using inferserve::Response;
 using inferserve::Status;
+using inferserve::SyntheticBackend;
 using inferserve::TimePoint;
 using inferserve::kMaxInputSize;
 using inferserve::validate_request;
@@ -201,6 +203,26 @@ TEST(Backend, ExposesLoadInferenceAndMetadataContract)
     backend.load();
     const InferenceResults results = backend.infer(batch);
     EXPECT_EQ(results, batch);
+}
+
+TEST(SyntheticBackend, ProducesOrderedDeterministicResults)
+{
+    SyntheticBackend backend(4, std::chrono::milliseconds(1), std::chrono::milliseconds(1));
+    const Batch batch{Data{1.0F}, Data{2.0F, 3.0F}, Data{4.0F, 5.0F, 6.0F}};
+
+    EXPECT_EQ(backend.name(), "synthetic");
+    EXPECT_EQ(backend.max_batch_size(), 4U);
+
+    backend.load();
+    const auto started = std::chrono::steady_clock::now();
+    const InferenceResults results = backend.infer(batch);
+    const auto elapsed = std::chrono::steady_clock::now() - started;
+
+    ASSERT_EQ(results.size(), batch.size());
+    ASSERT_EQ(results[0], Data({1.0F}));
+    ASSERT_EQ(results[1], Data({2.0F}));
+    ASSERT_EQ(results[2], Data({3.0F}));
+    EXPECT_GE(elapsed, std::chrono::milliseconds(3));
 }
 
 TEST(BoundedQueue, PreservesFifoOrder)
