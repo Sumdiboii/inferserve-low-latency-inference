@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstdlib>
 #include <future>
 #include <mutex>
 #include <optional>
@@ -329,9 +330,17 @@ TEST(BoundedQueue, SupportsRepeatedMpmcProductionAndConsumption)
     constexpr int producer_count = 4;
     constexpr int consumer_count = 4;
     constexpr int items_per_producer = 100;
-    constexpr int repetitions = 20;
+    constexpr int default_repetitions = 20;
     constexpr std::size_t queue_capacity = 8;
     constexpr int items_per_round = producer_count * items_per_producer;
+    int repetitions = default_repetitions;
+    if (const char* configured_repetitions = std::getenv("INFERSERVE_MPMC_REPETITIONS");
+        configured_repetitions != nullptr) {
+        const int parsed_repetitions = std::atoi(configured_repetitions);
+        if (parsed_repetitions > 0) {
+            repetitions = parsed_repetitions;
+        }
+    }
 
     for (int repetition = 0; repetition < repetitions; ++repetition) {
         BoundedQueue<int> queue(queue_capacity);
