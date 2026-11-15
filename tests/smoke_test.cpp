@@ -4,8 +4,12 @@
 #include <inferserve/core_types.hpp>
 #include <inferserve/request_admission.hpp>
 
+#include <algorithm>
 #include <chrono>
+#include <future>
+#include <mutex>
 #include <optional>
+#include <thread>
 #include <vector>
 
 namespace {
@@ -318,6 +322,72 @@ TEST(BoundedQueue, TimedPopWakesOnShutdown)
     queue.shutdown();
 
     EXPECT_FALSE(popped.get().has_value());
+}
+
+TEST(BoundedQueue, SupportsRepeatedMpmcProductionAndConsumption)
+{
+    constexpr int producer_count = 4;
+    constexpr int consumer_count = 4;
+    constexpr int items_per_producer = 100;
+    constexpr int repetitions = 20;
+    constexpr std::size_t queue_capacity = 8;
+    constexpr int items_per_round = producer_count * items_per_producer;
+
+    for (int repetition = 0; repetition < repetitions; ++repetition) {
+        BoundedQueue<int> queue(queue_capacity);
+        std::mutex consumed_mutex;
+        std::vector<int> consumed;
+        consumed.reserve(items_per_round);
+
+        std::promise<void> start_promise;
+        const std::shared_future<void> start = start_promise.get_future().share();
+        std::vector<std::thread> producers;
+        std::vector<std::thread> consumers;
+        producers.reserve(producer_count);
+        consumers.reserve(consumer_count);
+
+        for (int consumer = 0; consumer < consumer_count; ++consumer) {
+            consumers.emplace_back([&queue, &consumed, &consumed_mutex, start] {
+                start.wait();
+                while (true) {
+                    const std::optional<int> item = queue.pop();
+                    if (!item.has_value()) {
+                        return;
+                    }
+
+                    std::lock_guard lock(consumed_mutex);
+                    consumed.push_back(*item);
+                }
+            });
+        }
+
+        for (int producer = 0; producer < producer_count; ++producer) {
+            producers.emplace_back([&queue, start, producer] {
+                start.wait();
+                for (int item = 0; item < items_per_producer; ++item) {
+                    const int id = producer * items_per_producer + item;
+                    while (!queue.try_push(id)) {
+                        std::this_thread::yield();
+                    }
+                }
+            });
+        }
+
+        start_promise.set_value();
+        for (std::thread& producer : producers) {
+            producer.join();
+        }
+        queue.shutdown();
+        for (std::thread& consumer : consumers) {
+            consumer.join();
+        }
+
+        ASSERT_EQ(consumed.size(), static_cast<std::size_t>(items_per_round));
+        std::sort(consumed.begin(), consumed.end());
+        for (int id = 0; id < items_per_round; ++id) {
+            EXPECT_EQ(consumed[static_cast<std::size_t>(id)], id);
+        }
+    }
 }
 
 TEST(RequestAdmission, AcceptsRequestWhenCapacityIsAvailable)
