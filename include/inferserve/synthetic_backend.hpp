@@ -38,6 +38,10 @@ public:
     [[nodiscard]] InferenceResults infer(const Batch& batch) override
     {
         const auto cost = config_.fixed_ms + config_.per_item_ms * batch.size();
+        // sleep_for requests a minimum duration; it does not provide exact execution timing.
+        // OS scheduling, timer resolution, and system load can make elapsed time longer.
+        // These values are illustrative simulation parameters, not measured hardware latency.
+        // Busy-wait calibration may be considered later if timer jitter materially affects experiments.
         std::this_thread::sleep_for(cost);
 
         InferenceResults results;
