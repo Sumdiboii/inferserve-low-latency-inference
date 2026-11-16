@@ -1,8 +1,10 @@
 #include <gtest/gtest.h>
 
+#include <inferserve/backend.hpp>
 #include <inferserve/bounded_queue.hpp>
 #include <inferserve/core_types.hpp>
 #include <inferserve/request_admission.hpp>
+#include <inferserve/synthetic_backend.hpp>
 
 #include <algorithm>
 #include <chrono>
@@ -16,16 +18,39 @@
 namespace {
 
 using inferserve::Data;
+using inferserve::Backend;
+using inferserve::Batch;
 using inferserve::BoundedQueue;
+using inferserve::InferenceResults;
 using inferserve::MonotonicClock;
 using inferserve::Request;
 using inferserve::RequestAdmission;
 using inferserve::RequestId;
 using inferserve::Response;
 using inferserve::Status;
+using inferserve::SyntheticBackend;
+using inferserve::SyntheticBackendConfig;
 using inferserve::TimePoint;
 using inferserve::kMaxInputSize;
 using inferserve::validate_request;
+
+class TestBackend final : public Backend {
+public:
+    void load() override { loaded_ = true; }
+
+    [[nodiscard]] InferenceResults infer(const Batch& batch) override
+    {
+        EXPECT_TRUE(loaded_);
+        return batch;
+    }
+
+    [[nodiscard]] std::size_t max_batch_size() const override { return 4; }
+
+    [[nodiscard]] std::string_view name() const noexcept override { return "test"; }
+
+private:
+    bool loaded_ = false;
+};
 
 TEST(CoreTypes, RequestIdDistinguishesIdentifiers)
 {
@@ -166,6 +191,79 @@ TEST(CoreTypes, RequestCompletionSupportsFailedResponse)
 TEST(GoogleTestIntegration, DiscoversAndRuns)
 {
     EXPECT_EQ(1 + 1, 2);
+}
+
+TEST(Backend, ExposesLoadInferenceAndMetadataContract)
+{
+    TestBackend backend;
+    const Batch batch{Data{1.0F, 2.0F}, Data{3.0F}};
+
+    EXPECT_EQ(backend.name(), "test");
+    EXPECT_EQ(backend.max_batch_size(), 4U);
+
+    backend.load();
+    const InferenceResults results = backend.infer(batch);
+    EXPECT_EQ(results, batch);
+}
+
+TEST(SyntheticBackend, ProducesOrderedDeterministicResults)
+{
+    const SyntheticBackendConfig config{std::chrono::milliseconds(1), std::chrono::milliseconds(1), 4};
+    SyntheticBackend backend(config);
+    const Batch batch{Data{1.0F}, Data{2.0F, 3.0F}, Data{4.0F, 5.0F, 6.0F}};
+
+    EXPECT_EQ(backend.name(), "synthetic");
+    EXPECT_EQ(backend.max_batch_size(), 4U);
+
+    backend.load();
+    const auto started = std::chrono::steady_clock::now();
+    const InferenceResults results = backend.infer(batch);
+    const auto elapsed = std::chrono::steady_clock::now() - started;
+
+    ASSERT_EQ(results.size(), batch.size());
+    ASSERT_EQ(results[0], Data({1.0F}));
+    ASSERT_EQ(results[1], Data({2.0F}));
+    ASSERT_EQ(results[2], Data({3.0F}));
+    EXPECT_GE(elapsed, std::chrono::milliseconds(3));
+}
+
+TEST(SyntheticBackend, ProvidesDefaultConfiguration)
+{
+    const SyntheticBackendConfig config;
+    SyntheticBackend backend;
+
+    EXPECT_EQ(config.fixed_ms, std::chrono::milliseconds(1));
+    EXPECT_EQ(config.per_item_ms, std::chrono::milliseconds(1));
+    EXPECT_EQ(config.max_batch_size, 8U);
+    EXPECT_EQ(backend.max_batch_size(), config.max_batch_size);
+}
+
+TEST(SyntheticBackend, CustomTimingParametersAffectExecutionCost)
+{
+    const SyntheticBackendConfig config{std::chrono::milliseconds(2), std::chrono::milliseconds(3), 4};
+    SyntheticBackend backend(config);
+    const Batch batch{Data{1.0F}, Data{2.0F}};
+
+    backend.load();
+    const auto started = std::chrono::steady_clock::now();
+    static_cast<void>(backend.infer(batch));
+    const auto elapsed = std::chrono::steady_clock::now() - started;
+
+    // The configured cost is 2 ms + 3 ms * 2 items; allow 1 ms for clock jitter.
+    EXPECT_GE(elapsed, std::chrono::milliseconds(7));
+}
+
+TEST(SyntheticBackend, RejectsInvalidConfiguration)
+{
+    EXPECT_THROW(
+        SyntheticBackend(SyntheticBackendConfig{std::chrono::milliseconds(-1), std::chrono::milliseconds(1), 4}),
+        std::invalid_argument);
+    EXPECT_THROW(
+        SyntheticBackend(SyntheticBackendConfig{std::chrono::milliseconds(1), std::chrono::milliseconds(-1), 4}),
+        std::invalid_argument);
+    EXPECT_THROW(
+        SyntheticBackend(SyntheticBackendConfig{std::chrono::milliseconds(1), std::chrono::milliseconds(1), 0}),
+        std::invalid_argument);
 }
 
 TEST(BoundedQueue, PreservesFifoOrder)
