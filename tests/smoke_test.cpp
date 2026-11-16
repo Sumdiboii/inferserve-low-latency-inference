@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <inferserve/backend.hpp>
+#include <inferserve/batcher.hpp>
 #include <inferserve/bounded_queue.hpp>
 #include <inferserve/core_types.hpp>
 #include <inferserve/request_admission.hpp>
@@ -8,6 +9,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <condition_variable>
 #include <cstdlib>
 #include <future>
 #include <mutex>
@@ -20,6 +22,7 @@ namespace {
 using inferserve::Data;
 using inferserve::Backend;
 using inferserve::Batch;
+using inferserve::Batcher;
 using inferserve::BoundedQueue;
 using inferserve::InferenceResults;
 using inferserve::MonotonicClock;
@@ -264,6 +267,59 @@ TEST(SyntheticBackend, RejectsInvalidConfiguration)
     EXPECT_THROW(
         SyntheticBackend(SyntheticBackendConfig{std::chrono::milliseconds(1), std::chrono::milliseconds(1), 0}),
         std::invalid_argument);
+}
+
+TEST(Batcher, FormsBatchesUpToConfiguredSize)
+{
+    RequestAdmission admission(4);
+    std::condition_variable batches_ready;
+    std::mutex batches_mutex;
+    std::vector<std::vector<RequestId>> batches;
+
+    Batcher batcher(admission, 2, [&](const Batcher::RequestBatch& batch) {
+        std::vector<RequestId> ids;
+        for (const Request& request : batch) {
+            ids.push_back(request.id);
+        }
+
+        {
+            std::lock_guard lock(batches_mutex);
+            batches.push_back(std::move(ids));
+        }
+        batches_ready.notify_one();
+    });
+
+    for (std::uint64_t id = 1; id <= 3; ++id) {
+        Request request(RequestId(id), Data{1.0F});
+        ASSERT_EQ(admission.admit(std::move(request)), Status::Success);
+    }
+
+    batcher.start();
+    {
+        std::unique_lock lock(batches_mutex);
+        ASSERT_TRUE(batches_ready.wait_for(lock, std::chrono::seconds(1), [&batches] {
+            return batches.size() == 2;
+        }));
+    }
+    batcher.stop();
+
+    ASSERT_EQ(batches.size(), 2U);
+    ASSERT_EQ(batches[0], std::vector<RequestId>({RequestId(1), RequestId(2)}));
+    EXPECT_EQ(batches[1], std::vector<RequestId>({RequestId(3)}));
+}
+
+TEST(Batcher, StopShutsDownWaitingBatcherThread)
+{
+    RequestAdmission admission(1);
+    Batcher batcher(admission, 2, [](const Batcher::RequestBatch&) {});
+
+    batcher.start();
+    batcher.stop();
+
+    Request request(RequestId(4), Data{1.0F});
+    std::future<Response> future = request.get_future();
+    EXPECT_EQ(admission.admit(std::move(request)), Status::QueueFull);
+    EXPECT_EQ(future.get().status, Status::QueueFull);
 }
 
 TEST(BoundedQueue, PreservesFifoOrder)

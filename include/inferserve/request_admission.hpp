@@ -29,7 +29,9 @@ public:
         return Status::Success;
     }
 
+    [[nodiscard]] bool try_pop(Request& request) { return queue_.try_pop(request); }
     [[nodiscard]] std::optional<Request> pop() { return queue_.pop(); }
+    void shutdown() { queue_.shutdown(); }
 
 private:
     BoundedQueue<Request> queue_;
