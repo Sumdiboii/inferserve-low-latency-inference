@@ -322,6 +322,40 @@ TEST(Batcher, StopShutsDownWaitingBatcherThread)
     EXPECT_EQ(future.get().status, Status::QueueFull);
 }
 
+TEST(Batcher, DispatchesPartialBatchAfterMaximumDelay)
+{
+    RequestAdmission admission(2);
+    std::condition_variable batch_ready;
+    std::mutex batch_mutex;
+    std::vector<RequestId> batch_ids;
+    const auto max_delay = std::chrono::milliseconds(30);
+
+    Batcher batcher(admission, 2, [&](const Batcher::RequestBatch& batch) {
+        std::lock_guard lock(batch_mutex);
+        for (const Request& request : batch) {
+            batch_ids.push_back(request.id);
+        }
+        batch_ready.notify_one();
+    }, max_delay);
+
+    Request request(RequestId(5), Data{1.0F});
+    ASSERT_EQ(admission.admit(std::move(request)), Status::Success);
+
+    const auto started = std::chrono::steady_clock::now();
+    batcher.start();
+    {
+        std::unique_lock lock(batch_mutex);
+        ASSERT_TRUE(batch_ready.wait_for(lock, std::chrono::seconds(1), [&batch_ids] {
+            return !batch_ids.empty();
+        }));
+    }
+    const auto elapsed = std::chrono::steady_clock::now() - started;
+    batcher.stop();
+
+    EXPECT_GE(elapsed, std::chrono::milliseconds(15));
+    EXPECT_EQ(batch_ids, std::vector<RequestId>({RequestId(5)}));
+}
+
 TEST(BoundedQueue, PreservesFifoOrder)
 {
     BoundedQueue<int> queue(3);

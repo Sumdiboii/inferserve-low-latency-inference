@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <chrono>
 #include <optional>
 #include <utility>
 
@@ -31,6 +32,13 @@ public:
 
     [[nodiscard]] bool try_pop(Request& request) { return queue_.try_pop(request); }
     [[nodiscard]] std::optional<Request> pop() { return queue_.pop(); }
+
+    template <typename Rep, typename Period>
+    [[nodiscard]] std::optional<Request> pop_for(std::chrono::duration<Rep, Period> timeout)
+    {
+        return queue_.pop_for(timeout);
+    }
+
     void shutdown() { queue_.shutdown(); }
 
 private:
