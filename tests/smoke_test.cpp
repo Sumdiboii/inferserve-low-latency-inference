@@ -3,6 +3,7 @@
 #include <inferserve/backend.hpp>
 #include <inferserve/batcher.hpp>
 #include <inferserve/batch_dispatch_queue.hpp>
+#include <inferserve/batch_worker_pool.hpp>
 #include <inferserve/bounded_queue.hpp>
 #include <inferserve/core_types.hpp>
 #include <inferserve/request_admission.hpp>
@@ -25,6 +26,7 @@ using inferserve::Backend;
 using inferserve::Batch;
 using inferserve::Batcher;
 using inferserve::BatchDispatchQueue;
+using inferserve::BatchWorkerPool;
 using inferserve::BoundedQueue;
 using inferserve::InferenceResults;
 using inferserve::MonotonicClock;
@@ -66,6 +68,38 @@ public:
     }
     [[nodiscard]] std::size_t max_batch_size() const override { return 1; }
     [[nodiscard]] std::string_view name() const noexcept override { return "throwing"; }
+};
+
+class ConcurrentBackend final : public Backend {
+public:
+    void load() override {}
+
+    [[nodiscard]] InferenceResults infer(const Batch& batch) override
+    {
+        std::unique_lock lock(mutex_);
+        ++active_;
+        if (active_ > maximum_active_) {
+            maximum_active_ = active_;
+        }
+        both_active_.notify_all();
+        both_active_.wait(lock, [this] { return maximum_active_ == 2; });
+        --active_;
+        return batch;
+    }
+
+    [[nodiscard]] std::size_t max_batch_size() const override { return 4; }
+    [[nodiscard]] std::string_view name() const noexcept override { return "concurrent"; }
+    [[nodiscard]] std::size_t maximum_active() const
+    {
+        std::lock_guard lock(mutex_);
+        return maximum_active_;
+    }
+
+private:
+    mutable std::mutex mutex_;
+    std::condition_variable both_active_;
+    std::size_t active_ = 0;
+    std::size_t maximum_active_ = 0;
 };
 
 TEST(CoreTypes, RequestIdDistinguishesIdentifiers)
@@ -678,6 +712,34 @@ TEST(BatchDispatchQueue, DistinguishesFullAndShutdownPushes)
     shutdown_batch.emplace_back(RequestId(21), Data{3.0F});
     EXPECT_EQ(queue.try_push_result(std::move(shutdown_batch)),
               BatchDispatchQueue::PushResult::Shutdown);
+}
+
+TEST(BatchWorkerPool, ConfiguredWorkersProcessBatchesConcurrently)
+{
+    BatchDispatchQueue dispatch_queue(2);
+    ConcurrentBackend backend;
+    BatchWorkerPool workers(dispatch_queue, backend, 2);
+    std::vector<std::future<Response>> completions;
+
+    for (std::uint64_t id = 1; id <= 2; ++id) {
+        BatchDispatchQueue::RequestBatch batch;
+        Request request(RequestId(id), Data{static_cast<float>(id)});
+        completions.push_back(request.get_future());
+        batch.push_back(std::move(request));
+        ASSERT_TRUE(dispatch_queue.try_push(std::move(batch)));
+    }
+
+    dispatch_queue.shutdown();
+    workers.start();
+    workers.join();
+
+    EXPECT_EQ(backend.maximum_active(), 2U);
+    for (std::size_t index = 0; index < completions.size(); ++index) {
+        const Response response = completions[index].get();
+        EXPECT_EQ(response.id, RequestId(index + 1));
+        EXPECT_EQ(response.status, Status::Success);
+        EXPECT_EQ(response.output, Data({static_cast<float>(index + 1)}));
+    }
 }
 
 TEST(BoundedQueue, RejectsInsertionWhenFull)
