@@ -13,25 +13,40 @@ namespace inferserve {
 template <typename T>
 class BoundedQueue {
 public:
+    enum class PushResult {
+        Pushed,
+        Full,
+        Shutdown,
+    };
+
     explicit BoundedQueue(std::size_t capacity) : capacity_(capacity) {}
 
     BoundedQueue(const BoundedQueue&) = delete;
     BoundedQueue& operator=(const BoundedQueue&) = delete;
 
     template <typename U>
-    [[nodiscard]] bool try_push(U&& value)
+    [[nodiscard]] PushResult try_push_result(U&& value)
     {
         {
             std::lock_guard lock(mutex_);
-            if (shutdown_ || queue_.size() >= capacity_) {
-                return false;
+            if (shutdown_) {
+                return PushResult::Shutdown;
+            }
+            if (queue_.size() >= capacity_) {
+                return PushResult::Full;
             }
 
             queue_.push(std::forward<U>(value));
         }
 
         not_empty_.notify_one();
-        return true;
+        return PushResult::Pushed;
+    }
+
+    template <typename U>
+    [[nodiscard]] bool try_push(U&& value)
+    {
+        return try_push_result(std::forward<U>(value)) == PushResult::Pushed;
     }
 
     [[nodiscard]] bool try_pop(T& value)

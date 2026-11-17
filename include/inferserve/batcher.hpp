@@ -10,6 +10,7 @@
 #include <vector>
 
 #include <inferserve/backend.hpp>
+#include <inferserve/batch_dispatch_queue.hpp>
 #include <inferserve/core_types.hpp>
 #include <inferserve/request_admission.hpp>
 
@@ -17,7 +18,7 @@ namespace inferserve {
 
 class Batcher {
 public:
-    using RequestBatch = std::vector<Request>;
+    using RequestBatch = BatchDispatchQueue::RequestBatch;
     using BatchCallback = std::function<void(const RequestBatch&)>;
 
     Batcher(RequestAdmission& admission,
@@ -60,6 +61,19 @@ public:
         if (!callback_) {
             throw std::invalid_argument("batcher callback must be provided");
         }
+    }
+
+    Batcher(RequestAdmission& admission,
+            BatchDispatchQueue& dispatch_queue,
+            std::size_t max_batch_size,
+            std::chrono::milliseconds max_batch_delay = std::chrono::milliseconds::zero())
+        : admission_(admission),
+          backend_(nullptr),
+          max_batch_size_(max_batch_size),
+          dispatch_queue_(&dispatch_queue),
+          max_batch_delay_(max_batch_delay)
+    {
+        validate_configuration();
     }
 
     Batcher(const Batcher&) = delete;
@@ -154,6 +168,17 @@ private:
 
     void execute(RequestBatch& batch)
     {
+        if (dispatch_queue_ != nullptr) {
+            const BatchDispatchQueue::PushResult result =
+                dispatch_queue_->try_push_result(std::move(batch));
+            if (result != BatchDispatchQueue::PushResult::Pushed) {
+                complete_with_status(
+                    batch, result == BatchDispatchQueue::PushResult::Full ? Status::QueueFull
+                                                                          : Status::InternalError);
+            }
+            return;
+        }
+
         if (backend_ == nullptr) {
             callback_(batch);
             return;
@@ -208,9 +233,14 @@ private:
 
     void complete_with_error(RequestBatch& batch)
     {
+        complete_with_status(batch, Status::BackendError);
+    }
+
+    void complete_with_status(RequestBatch& batch, Status status)
+    {
         for (Request& request : batch) {
             request.completed = clock_.now();
-            request.complete(Response(request.id, Status::BackendError));
+            request.complete(Response(request.id, status));
         }
     }
 
@@ -218,6 +248,7 @@ private:
     Backend* backend_;
     const std::size_t max_batch_size_;
     BatchCallback callback_;
+    BatchDispatchQueue* dispatch_queue_ = nullptr;
     const std::chrono::milliseconds max_batch_delay_;
     MonotonicClock clock_;
     std::optional<Request> pending_request_;

@@ -2,6 +2,7 @@
 
 #include <inferserve/backend.hpp>
 #include <inferserve/batcher.hpp>
+#include <inferserve/batch_dispatch_queue.hpp>
 #include <inferserve/bounded_queue.hpp>
 #include <inferserve/core_types.hpp>
 #include <inferserve/request_admission.hpp>
@@ -23,6 +24,7 @@ using inferserve::Data;
 using inferserve::Backend;
 using inferserve::Batch;
 using inferserve::Batcher;
+using inferserve::BatchDispatchQueue;
 using inferserve::BoundedQueue;
 using inferserve::InferenceResults;
 using inferserve::MonotonicClock;
@@ -358,6 +360,47 @@ TEST(Batcher, DispatchesEachRequestIndividuallyWhenBatchingIsOff)
     EXPECT_EQ(batches[2], std::vector<RequestId>({RequestId(3)}));
 }
 
+TEST(Batcher, DispatchesFormedBatchToDispatchQueue)
+{
+    RequestAdmission admission(2);
+    BatchDispatchQueue dispatch_queue(1);
+    Batcher batcher(admission, dispatch_queue, 2);
+
+    Request request(RequestId(4), Data{1.0F});
+    std::future<Response> response = request.get_future();
+    ASSERT_EQ(admission.admit(std::move(request)), Status::Success);
+
+    batcher.start();
+    std::optional<BatchDispatchQueue::RequestBatch> batch =
+        dispatch_queue.pop_for(std::chrono::seconds(1));
+    batcher.stop();
+
+    ASSERT_TRUE(batch.has_value());
+    ASSERT_EQ(batch->size(), 1U);
+    EXPECT_EQ(batch->front().id, RequestId(4));
+    EXPECT_TRUE(batch->front().batch_formed.has_value());
+
+    batch->front().complete(Response(batch->front().id, Status::Success));
+    EXPECT_EQ(response.get().status, Status::Success);
+}
+
+TEST(Batcher, CompletesRequestsWhenDispatchQueueIsShutdown)
+{
+    RequestAdmission admission(1);
+    BatchDispatchQueue dispatch_queue(1);
+    dispatch_queue.shutdown();
+    Batcher batcher(admission, dispatch_queue, 1);
+
+    Request request(RequestId(22), Data{1.0F});
+    std::future<Response> response = request.get_future();
+    ASSERT_EQ(admission.admit(std::move(request)), Status::Success);
+
+    batcher.start();
+    batcher.stop();
+
+    EXPECT_EQ(response.get().status, Status::InternalError);
+}
+
 TEST(Batcher, StopShutsDownWaitingBatcherThread)
 {
     RequestAdmission admission(1);
@@ -597,6 +640,44 @@ TEST(BoundedQueue, PreservesFifoOrder)
     EXPECT_EQ(value, 2);
     ASSERT_TRUE(queue.try_pop(value));
     EXPECT_EQ(value, 3);
+}
+
+TEST(BatchDispatchQueue, MovesFormedBatchAndPreservesRequestOwnership)
+{
+    BatchDispatchQueue queue(1);
+    BatchDispatchQueue::RequestBatch batch;
+    batch.emplace_back(RequestId(18), Data{1.0F, 2.0F});
+    std::future<Response> future = batch.front().get_future();
+
+    ASSERT_TRUE(queue.try_push(std::move(batch)));
+    std::optional<BatchDispatchQueue::RequestBatch> popped = queue.pop();
+
+    ASSERT_TRUE(popped.has_value());
+    ASSERT_EQ(popped->size(), 1U);
+    EXPECT_EQ(popped->front().id, RequestId(18));
+    EXPECT_EQ(popped->front().input, Data({1.0F, 2.0F}));
+
+    popped->front().complete(Response(popped->front().id, Status::Success));
+    EXPECT_EQ(future.get().status, Status::Success);
+}
+
+TEST(BatchDispatchQueue, DistinguishesFullAndShutdownPushes)
+{
+    BatchDispatchQueue queue(1);
+    BatchDispatchQueue::RequestBatch first_batch;
+    first_batch.emplace_back(RequestId(19), Data{1.0F});
+    ASSERT_EQ(queue.try_push_result(std::move(first_batch)),
+              BatchDispatchQueue::PushResult::Pushed);
+
+    BatchDispatchQueue::RequestBatch full_batch;
+    full_batch.emplace_back(RequestId(20), Data{2.0F});
+    EXPECT_EQ(queue.try_push_result(std::move(full_batch)), BatchDispatchQueue::PushResult::Full);
+
+    queue.shutdown();
+    BatchDispatchQueue::RequestBatch shutdown_batch;
+    shutdown_batch.emplace_back(RequestId(21), Data{3.0F});
+    EXPECT_EQ(queue.try_push_result(std::move(shutdown_batch)),
+              BatchDispatchQueue::PushResult::Shutdown);
 }
 
 TEST(BoundedQueue, RejectsInsertionWhenFull)
