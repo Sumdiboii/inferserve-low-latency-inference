@@ -319,6 +319,45 @@ TEST(Batcher, FormsBatchesUpToConfiguredSize)
     EXPECT_EQ(batches[1], std::vector<RequestId>({RequestId(3)}));
 }
 
+TEST(Batcher, DispatchesEachRequestIndividuallyWhenBatchingIsOff)
+{
+    RequestAdmission admission(3);
+    std::condition_variable batches_ready;
+    std::mutex batches_mutex;
+    std::vector<std::vector<RequestId>> batches;
+
+    Batcher batcher(admission, 1, [&](const Batcher::RequestBatch& batch) {
+        std::vector<RequestId> ids;
+        for (const Request& request : batch) {
+            ids.push_back(request.id);
+        }
+
+        {
+            std::lock_guard lock(batches_mutex);
+            batches.push_back(std::move(ids));
+        }
+        batches_ready.notify_one();
+    });
+
+    for (std::uint64_t id = 1; id <= 3; ++id) {
+        ASSERT_EQ(admission.admit(Request(RequestId(id), Data{1.0F})), Status::Success);
+    }
+
+    batcher.start();
+    {
+        std::unique_lock lock(batches_mutex);
+        ASSERT_TRUE(batches_ready.wait_for(lock, std::chrono::seconds(1), [&batches] {
+            return batches.size() == 3;
+        }));
+    }
+    batcher.stop();
+
+    ASSERT_EQ(batches.size(), 3U);
+    EXPECT_EQ(batches[0], std::vector<RequestId>({RequestId(1)}));
+    EXPECT_EQ(batches[1], std::vector<RequestId>({RequestId(2)}));
+    EXPECT_EQ(batches[2], std::vector<RequestId>({RequestId(3)}));
+}
+
 TEST(Batcher, StopShutsDownWaitingBatcherThread)
 {
     RequestAdmission admission(1);
