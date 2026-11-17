@@ -33,6 +33,20 @@ public:
     }
 
     Batcher(RequestAdmission& admission,
+            Backend& backend,
+            std::size_t max_batch_size,
+            BatchCallback callback,
+            std::chrono::milliseconds max_batch_delay = std::chrono::milliseconds::zero())
+        : admission_(admission),
+          backend_(&backend),
+          max_batch_size_(max_batch_size),
+          callback_(std::move(callback)),
+          max_batch_delay_(max_batch_delay)
+    {
+        validate_configuration();
+    }
+
+    Batcher(RequestAdmission& admission,
             std::size_t max_batch_size,
             BatchCallback callback,
             std::chrono::milliseconds max_batch_delay = std::chrono::milliseconds::zero())
@@ -120,6 +134,10 @@ private:
                 }
             }
 
+            const TimePoint batch_formed = clock_.now();
+            for (Request& request : batch) {
+                request.batch_formed = batch_formed;
+            }
             execute(batch);
         }
     }
@@ -147,24 +165,51 @@ private:
             inputs.push_back(request.input);
         }
 
+        const TimePoint exec_start = clock_.now();
+        for (Request& request : batch) {
+            request.exec_start = exec_start;
+        }
+
         try {
             const InferenceResults results = backend_->infer(inputs);
+            record_exec_end(batch);
             if (results.size() != batch.size()) {
                 complete_with_error(batch);
+                notify_batch(batch);
                 return;
             }
 
             for (std::size_t index = 0; index < batch.size(); ++index) {
+                batch[index].completed = clock_.now();
                 batch[index].complete(Response(batch[index].id, Status::Success, results[index]));
             }
+            notify_batch(batch);
         } catch (...) {
+            record_exec_end(batch);
             complete_with_error(batch);
+            notify_batch(batch);
         }
     }
 
-    static void complete_with_error(RequestBatch& batch)
+    void notify_batch(const RequestBatch& batch)
+    {
+        if (callback_) {
+            callback_(batch);
+        }
+    }
+
+    void record_exec_end(RequestBatch& batch)
+    {
+        const TimePoint exec_end = clock_.now();
+        for (Request& request : batch) {
+            request.exec_end = exec_end;
+        }
+    }
+
+    void complete_with_error(RequestBatch& batch)
     {
         for (Request& request : batch) {
+            request.completed = clock_.now();
             request.complete(Response(request.id, Status::BackendError));
         }
     }
@@ -174,6 +219,7 @@ private:
     const std::size_t max_batch_size_;
     BatchCallback callback_;
     const std::chrono::milliseconds max_batch_delay_;
+    MonotonicClock clock_;
     std::optional<Request> pending_request_;
     bool started_ = false;
     std::thread thread_;

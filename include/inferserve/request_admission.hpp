@@ -22,7 +22,9 @@ public:
             return validation_status;
         }
 
+        request.enqueued = MonotonicClock{}.now();
         if (!queue_.try_push(std::move(request))) {
+            request.enqueued.reset();
             request.complete(Response(request.id, Status::QueueFull));
             return Status::QueueFull;
         }

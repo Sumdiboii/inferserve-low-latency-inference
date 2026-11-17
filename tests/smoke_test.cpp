@@ -55,6 +55,17 @@ private:
     bool loaded_ = false;
 };
 
+class ThrowingBackend final : public Backend {
+public:
+    void load() override {}
+    [[nodiscard]] InferenceResults infer(const Batch&) override
+    {
+        throw std::runtime_error("inference failed");
+    }
+    [[nodiscard]] std::size_t max_batch_size() const override { return 1; }
+    [[nodiscard]] std::string_view name() const noexcept override { return "throwing"; }
+};
+
 TEST(CoreTypes, RequestIdDistinguishesIdentifiers)
 {
     const RequestId first(1);
@@ -420,6 +431,97 @@ TEST(Batcher, DeliversBackendResultsToRequestFutures)
     EXPECT_EQ(second_response.id, RequestId(10));
     EXPECT_EQ(second_response.status, Status::Success);
     EXPECT_EQ(second_response.output, Data({3.0F, 4.0F}));
+}
+
+TEST(Batcher, RecordsBackendExecutionTimestamps)
+{
+    RequestAdmission admission(1);
+    TestBackend backend;
+    backend.load();
+    std::condition_variable batch_ready;
+    std::mutex batch_mutex;
+    std::optional<TimePoint> arrival;
+    std::optional<TimePoint> enqueued;
+    std::optional<TimePoint> batch_formed;
+    std::optional<TimePoint> exec_start;
+    std::optional<TimePoint> exec_end;
+    std::optional<TimePoint> completed;
+
+    Batcher batcher(admission, backend, 1, [&](const Batcher::RequestBatch& batch) {
+        {
+            std::lock_guard lock(batch_mutex);
+            arrival = batch.front().arrival;
+            enqueued = batch.front().enqueued;
+            batch_formed = batch.front().batch_formed;
+            exec_start = batch.front().exec_start;
+            exec_end = batch.front().exec_end;
+            completed = batch.front().completed;
+        }
+        batch_ready.notify_one();
+    });
+
+    Request request(RequestId(11), Data{1.0F});
+    std::future<Response> response = request.get_future();
+    ASSERT_EQ(admission.admit(std::move(request)), Status::Success);
+
+    batcher.start();
+    {
+        std::unique_lock lock(batch_mutex);
+        ASSERT_TRUE(batch_ready.wait_for(lock, std::chrono::seconds(1), [&completed] {
+            return completed.has_value();
+        }));
+    }
+    EXPECT_EQ(response.get().status, Status::Success);
+    batcher.stop();
+
+    ASSERT_TRUE(arrival.has_value());
+    ASSERT_TRUE(enqueued.has_value());
+    ASSERT_TRUE(batch_formed.has_value());
+    ASSERT_TRUE(exec_start.has_value());
+    ASSERT_TRUE(exec_end.has_value());
+    ASSERT_TRUE(completed.has_value());
+    EXPECT_LE(*arrival, *enqueued);
+    EXPECT_LE(*enqueued, *batch_formed);
+    EXPECT_LE(*batch_formed, *exec_start);
+    EXPECT_LE(*exec_start, *exec_end);
+    EXPECT_LE(*exec_end, *completed);
+}
+
+TEST(Batcher, RecordsCompletionTimestampsWhenBackendThrows)
+{
+    RequestAdmission admission(1);
+    ThrowingBackend backend;
+    std::condition_variable batch_ready;
+    std::mutex batch_mutex;
+    std::optional<TimePoint> exec_end;
+    std::optional<TimePoint> completed;
+
+    Batcher batcher(admission, backend, 1, [&](const Batcher::RequestBatch& batch) {
+        {
+            std::lock_guard lock(batch_mutex);
+            exec_end = batch.front().exec_end;
+            completed = batch.front().completed;
+        }
+        batch_ready.notify_one();
+    });
+
+    Request request(RequestId(12), Data{1.0F});
+    std::future<Response> response = request.get_future();
+    ASSERT_EQ(admission.admit(std::move(request)), Status::Success);
+
+    batcher.start();
+    {
+        std::unique_lock lock(batch_mutex);
+        ASSERT_TRUE(batch_ready.wait_for(lock, std::chrono::seconds(1), [&completed] {
+            return completed.has_value();
+        }));
+    }
+    EXPECT_EQ(response.get().status, Status::BackendError);
+    batcher.stop();
+
+    ASSERT_TRUE(exec_end.has_value());
+    ASSERT_TRUE(completed.has_value());
+    EXPECT_LE(*exec_end, *completed);
 }
 
 TEST(BoundedQueue, PreservesFifoOrder)
