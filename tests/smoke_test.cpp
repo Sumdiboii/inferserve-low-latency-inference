@@ -394,6 +394,34 @@ TEST(Batcher, SeparatesRequestsWithDifferentInputSizes)
     EXPECT_EQ(batches[1], std::vector<RequestId>({RequestId(7), RequestId(8)}));
 }
 
+TEST(Batcher, DeliversBackendResultsToRequestFutures)
+{
+    RequestAdmission admission(2);
+    TestBackend backend;
+    backend.load();
+    Batcher batcher(admission, backend, 2);
+
+    Request first(RequestId(9), Data{1.0F, 2.0F});
+    Request second(RequestId(10), Data{3.0F, 4.0F});
+    std::future<Response> first_future = first.get_future();
+    std::future<Response> second_future = second.get_future();
+
+    ASSERT_EQ(admission.admit(std::move(first)), Status::Success);
+    ASSERT_EQ(admission.admit(std::move(second)), Status::Success);
+
+    batcher.start();
+    const Response first_response = first_future.get();
+    const Response second_response = second_future.get();
+    batcher.stop();
+
+    EXPECT_EQ(first_response.id, RequestId(9));
+    EXPECT_EQ(first_response.status, Status::Success);
+    EXPECT_EQ(first_response.output, Data({1.0F, 2.0F}));
+    EXPECT_EQ(second_response.id, RequestId(10));
+    EXPECT_EQ(second_response.status, Status::Success);
+    EXPECT_EQ(second_response.output, Data({3.0F, 4.0F}));
+}
+
 TEST(BoundedQueue, PreservesFifoOrder)
 {
     BoundedQueue<int> queue(3);

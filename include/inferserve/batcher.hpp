@@ -9,6 +9,7 @@
 #include <utility>
 #include <vector>
 
+#include <inferserve/backend.hpp>
 #include <inferserve/core_types.hpp>
 #include <inferserve/request_admission.hpp>
 
@@ -20,22 +21,30 @@ public:
     using BatchCallback = std::function<void(const RequestBatch&)>;
 
     Batcher(RequestAdmission& admission,
+            Backend& backend,
+            std::size_t max_batch_size,
+            std::chrono::milliseconds max_batch_delay = std::chrono::milliseconds::zero())
+        : admission_(admission),
+          backend_(&backend),
+          max_batch_size_(max_batch_size),
+          max_batch_delay_(max_batch_delay)
+    {
+        validate_configuration();
+    }
+
+    Batcher(RequestAdmission& admission,
             std::size_t max_batch_size,
             BatchCallback callback,
             std::chrono::milliseconds max_batch_delay = std::chrono::milliseconds::zero())
         : admission_(admission),
+          backend_(nullptr),
           max_batch_size_(max_batch_size),
           callback_(std::move(callback)),
           max_batch_delay_(max_batch_delay)
     {
-        if (max_batch_size_ == 0) {
-            throw std::invalid_argument("batcher maximum batch size must be positive");
-        }
+        validate_configuration();
         if (!callback_) {
             throw std::invalid_argument("batcher callback must be provided");
-        }
-        if (max_batch_delay_ < std::chrono::milliseconds::zero()) {
-            throw std::invalid_argument("batcher maximum delay cannot be negative");
         }
     }
 
@@ -111,11 +120,57 @@ private:
                 }
             }
 
+            execute(batch);
+        }
+    }
+
+    void validate_configuration() const
+    {
+        if (max_batch_size_ == 0) {
+            throw std::invalid_argument("batcher maximum batch size must be positive");
+        }
+        if (max_batch_delay_ < std::chrono::milliseconds::zero()) {
+            throw std::invalid_argument("batcher maximum delay cannot be negative");
+        }
+    }
+
+    void execute(RequestBatch& batch)
+    {
+        if (backend_ == nullptr) {
             callback_(batch);
+            return;
+        }
+
+        Batch inputs;
+        inputs.reserve(batch.size());
+        for (const Request& request : batch) {
+            inputs.push_back(request.input);
+        }
+
+        try {
+            const InferenceResults results = backend_->infer(inputs);
+            if (results.size() != batch.size()) {
+                complete_with_error(batch);
+                return;
+            }
+
+            for (std::size_t index = 0; index < batch.size(); ++index) {
+                batch[index].complete(Response(batch[index].id, Status::Success, results[index]));
+            }
+        } catch (...) {
+            complete_with_error(batch);
+        }
+    }
+
+    static void complete_with_error(RequestBatch& batch)
+    {
+        for (Request& request : batch) {
+            request.complete(Response(request.id, Status::BackendError));
         }
     }
 
     RequestAdmission& admission_;
+    Backend* backend_;
     const std::size_t max_batch_size_;
     BatchCallback callback_;
     const std::chrono::milliseconds max_batch_delay_;
