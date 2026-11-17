@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <inferserve/backend.hpp>
+#include <inferserve/batcher.hpp>
 #include <inferserve/bounded_queue.hpp>
 #include <inferserve/core_types.hpp>
 #include <inferserve/request_admission.hpp>
@@ -8,6 +9,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <condition_variable>
 #include <cstdlib>
 #include <future>
 #include <mutex>
@@ -20,6 +22,7 @@ namespace {
 using inferserve::Data;
 using inferserve::Backend;
 using inferserve::Batch;
+using inferserve::Batcher;
 using inferserve::BoundedQueue;
 using inferserve::InferenceResults;
 using inferserve::MonotonicClock;
@@ -50,6 +53,17 @@ public:
 
 private:
     bool loaded_ = false;
+};
+
+class ThrowingBackend final : public Backend {
+public:
+    void load() override {}
+    [[nodiscard]] InferenceResults infer(const Batch&) override
+    {
+        throw std::runtime_error("inference failed");
+    }
+    [[nodiscard]] std::size_t max_batch_size() const override { return 1; }
+    [[nodiscard]] std::string_view name() const noexcept override { return "throwing"; }
 };
 
 TEST(CoreTypes, RequestIdDistinguishesIdentifiers)
@@ -264,6 +278,308 @@ TEST(SyntheticBackend, RejectsInvalidConfiguration)
     EXPECT_THROW(
         SyntheticBackend(SyntheticBackendConfig{std::chrono::milliseconds(1), std::chrono::milliseconds(1), 0}),
         std::invalid_argument);
+}
+
+TEST(Batcher, FormsBatchesUpToConfiguredSize)
+{
+    RequestAdmission admission(4);
+    std::condition_variable batches_ready;
+    std::mutex batches_mutex;
+    std::vector<std::vector<RequestId>> batches;
+
+    Batcher batcher(admission, 2, [&](const Batcher::RequestBatch& batch) {
+        std::vector<RequestId> ids;
+        for (const Request& request : batch) {
+            ids.push_back(request.id);
+        }
+
+        {
+            std::lock_guard lock(batches_mutex);
+            batches.push_back(std::move(ids));
+        }
+        batches_ready.notify_one();
+    });
+
+    for (std::uint64_t id = 1; id <= 3; ++id) {
+        Request request(RequestId(id), Data{1.0F});
+        ASSERT_EQ(admission.admit(std::move(request)), Status::Success);
+    }
+
+    batcher.start();
+    {
+        std::unique_lock lock(batches_mutex);
+        ASSERT_TRUE(batches_ready.wait_for(lock, std::chrono::seconds(1), [&batches] {
+            return batches.size() == 2;
+        }));
+    }
+    batcher.stop();
+
+    ASSERT_EQ(batches.size(), 2U);
+    ASSERT_EQ(batches[0], std::vector<RequestId>({RequestId(1), RequestId(2)}));
+    EXPECT_EQ(batches[1], std::vector<RequestId>({RequestId(3)}));
+}
+
+TEST(Batcher, DispatchesEachRequestIndividuallyWhenBatchingIsOff)
+{
+    RequestAdmission admission(3);
+    std::condition_variable batches_ready;
+    std::mutex batches_mutex;
+    std::vector<std::vector<RequestId>> batches;
+
+    Batcher batcher(admission, 1, [&](const Batcher::RequestBatch& batch) {
+        std::vector<RequestId> ids;
+        for (const Request& request : batch) {
+            ids.push_back(request.id);
+        }
+
+        {
+            std::lock_guard lock(batches_mutex);
+            batches.push_back(std::move(ids));
+        }
+        batches_ready.notify_one();
+    });
+
+    for (std::uint64_t id = 1; id <= 3; ++id) {
+        ASSERT_EQ(admission.admit(Request(RequestId(id), Data{1.0F})), Status::Success);
+    }
+
+    batcher.start();
+    {
+        std::unique_lock lock(batches_mutex);
+        ASSERT_TRUE(batches_ready.wait_for(lock, std::chrono::seconds(1), [&batches] {
+            return batches.size() == 3;
+        }));
+    }
+    batcher.stop();
+
+    ASSERT_EQ(batches.size(), 3U);
+    EXPECT_EQ(batches[0], std::vector<RequestId>({RequestId(1)}));
+    EXPECT_EQ(batches[1], std::vector<RequestId>({RequestId(2)}));
+    EXPECT_EQ(batches[2], std::vector<RequestId>({RequestId(3)}));
+}
+
+TEST(Batcher, StopShutsDownWaitingBatcherThread)
+{
+    RequestAdmission admission(1);
+    Batcher batcher(admission, 2, [](const Batcher::RequestBatch&) {});
+
+    batcher.start();
+    batcher.stop();
+
+    Request request(RequestId(4), Data{1.0F});
+    std::future<Response> future = request.get_future();
+    EXPECT_EQ(admission.admit(std::move(request)), Status::QueueFull);
+    EXPECT_EQ(future.get().status, Status::QueueFull);
+}
+
+TEST(Batcher, DispatchesPartialBatchAfterMaximumDelay)
+{
+    RequestAdmission admission(2);
+    std::condition_variable batch_ready;
+    std::mutex batch_mutex;
+    std::vector<RequestId> batch_ids;
+    const auto max_delay = std::chrono::milliseconds(30);
+
+    Batcher batcher(admission, 2, [&](const Batcher::RequestBatch& batch) {
+        std::lock_guard lock(batch_mutex);
+        for (const Request& request : batch) {
+            batch_ids.push_back(request.id);
+        }
+        batch_ready.notify_one();
+    }, max_delay);
+
+    Request request(RequestId(5), Data{1.0F});
+    ASSERT_EQ(admission.admit(std::move(request)), Status::Success);
+
+    const auto started = std::chrono::steady_clock::now();
+    batcher.start();
+    {
+        std::unique_lock lock(batch_mutex);
+        ASSERT_TRUE(batch_ready.wait_for(lock, std::chrono::seconds(1), [&batch_ids] {
+            return !batch_ids.empty();
+        }));
+    }
+    const auto elapsed = std::chrono::steady_clock::now() - started;
+    batcher.stop();
+
+    EXPECT_GE(elapsed, std::chrono::milliseconds(15));
+    EXPECT_EQ(batch_ids, std::vector<RequestId>({RequestId(5)}));
+}
+
+TEST(Batcher, ShutdownDispatchesPendingPartialBatch)
+{
+    RequestAdmission admission(2);
+    TestBackend backend;
+    backend.load();
+    Batcher batcher(admission, backend, 2);
+
+    Request request(RequestId(6), Data{1.0F});
+    std::future<Response> response = request.get_future();
+    ASSERT_EQ(admission.admit(std::move(request)), Status::Success);
+    batcher.start();
+    batcher.stop();
+
+    const Response result = response.get();
+    EXPECT_EQ(result.id, RequestId(6));
+    EXPECT_EQ(result.status, Status::Success);
+    EXPECT_EQ(result.output, Data{1.0F});
+}
+
+TEST(Batcher, SeparatesRequestsWithDifferentInputSizes)
+{
+    RequestAdmission admission(4);
+    std::condition_variable batches_ready;
+    std::mutex batches_mutex;
+    std::vector<std::vector<RequestId>> batches;
+
+    Batcher batcher(admission, 3, [&](const Batcher::RequestBatch& batch) {
+        std::vector<RequestId> ids;
+        for (const Request& request : batch) {
+            ids.push_back(request.id);
+        }
+
+        {
+            std::lock_guard lock(batches_mutex);
+            batches.push_back(std::move(ids));
+        }
+        batches_ready.notify_one();
+    });
+
+    ASSERT_EQ(admission.admit(Request(RequestId(6), Data{1.0F, 2.0F})), Status::Success);
+    ASSERT_EQ(admission.admit(Request(RequestId(7), Data{3.0F})), Status::Success);
+    ASSERT_EQ(admission.admit(Request(RequestId(8), Data{4.0F})), Status::Success);
+
+    batcher.start();
+    {
+        std::unique_lock lock(batches_mutex);
+        ASSERT_TRUE(batches_ready.wait_for(lock, std::chrono::seconds(1), [&batches] {
+            return batches.size() == 2;
+        }));
+    }
+    batcher.stop();
+
+    ASSERT_EQ(batches.size(), 2U);
+    EXPECT_EQ(batches[0], std::vector<RequestId>({RequestId(6)}));
+    EXPECT_EQ(batches[1], std::vector<RequestId>({RequestId(7), RequestId(8)}));
+}
+
+TEST(Batcher, DeliversBackendResultsToRequestFutures)
+{
+    RequestAdmission admission(2);
+    TestBackend backend;
+    backend.load();
+    Batcher batcher(admission, backend, 2);
+
+    Request first(RequestId(9), Data{1.0F, 2.0F});
+    Request second(RequestId(10), Data{3.0F, 4.0F});
+    std::future<Response> first_future = first.get_future();
+    std::future<Response> second_future = second.get_future();
+
+    ASSERT_EQ(admission.admit(std::move(first)), Status::Success);
+    ASSERT_EQ(admission.admit(std::move(second)), Status::Success);
+
+    batcher.start();
+    const Response first_response = first_future.get();
+    const Response second_response = second_future.get();
+    batcher.stop();
+
+    EXPECT_EQ(first_response.id, RequestId(9));
+    EXPECT_EQ(first_response.status, Status::Success);
+    EXPECT_EQ(first_response.output, Data({1.0F, 2.0F}));
+    EXPECT_EQ(second_response.id, RequestId(10));
+    EXPECT_EQ(second_response.status, Status::Success);
+    EXPECT_EQ(second_response.output, Data({3.0F, 4.0F}));
+}
+
+TEST(Batcher, RecordsBackendExecutionTimestamps)
+{
+    RequestAdmission admission(1);
+    TestBackend backend;
+    backend.load();
+    std::condition_variable batch_ready;
+    std::mutex batch_mutex;
+    std::optional<TimePoint> arrival;
+    std::optional<TimePoint> enqueued;
+    std::optional<TimePoint> batch_formed;
+    std::optional<TimePoint> exec_start;
+    std::optional<TimePoint> exec_end;
+    std::optional<TimePoint> completed;
+
+    Batcher batcher(admission, backend, 1, [&](const Batcher::RequestBatch& batch) {
+        {
+            std::lock_guard lock(batch_mutex);
+            arrival = batch.front().arrival;
+            enqueued = batch.front().enqueued;
+            batch_formed = batch.front().batch_formed;
+            exec_start = batch.front().exec_start;
+            exec_end = batch.front().exec_end;
+            completed = batch.front().completed;
+        }
+        batch_ready.notify_one();
+    });
+
+    Request request(RequestId(11), Data{1.0F});
+    std::future<Response> response = request.get_future();
+    ASSERT_EQ(admission.admit(std::move(request)), Status::Success);
+
+    batcher.start();
+    {
+        std::unique_lock lock(batch_mutex);
+        ASSERT_TRUE(batch_ready.wait_for(lock, std::chrono::seconds(1), [&completed] {
+            return completed.has_value();
+        }));
+    }
+    EXPECT_EQ(response.get().status, Status::Success);
+    batcher.stop();
+
+    ASSERT_TRUE(arrival.has_value());
+    ASSERT_TRUE(enqueued.has_value());
+    ASSERT_TRUE(batch_formed.has_value());
+    ASSERT_TRUE(exec_start.has_value());
+    ASSERT_TRUE(exec_end.has_value());
+    ASSERT_TRUE(completed.has_value());
+    EXPECT_LE(*arrival, *enqueued);
+    EXPECT_LE(*enqueued, *batch_formed);
+    EXPECT_LE(*batch_formed, *exec_start);
+    EXPECT_LE(*exec_start, *exec_end);
+    EXPECT_LE(*exec_end, *completed);
+}
+
+TEST(Batcher, RecordsCompletionTimestampsWhenBackendThrows)
+{
+    RequestAdmission admission(1);
+    ThrowingBackend backend;
+    std::condition_variable batch_ready;
+    std::mutex batch_mutex;
+    std::optional<TimePoint> exec_end;
+    std::optional<TimePoint> completed;
+
+    Batcher batcher(admission, backend, 1, [&](const Batcher::RequestBatch& batch) {
+        {
+            std::lock_guard lock(batch_mutex);
+            exec_end = batch.front().exec_end;
+            completed = batch.front().completed;
+        }
+        batch_ready.notify_one();
+    });
+
+    Request request(RequestId(12), Data{1.0F});
+    std::future<Response> response = request.get_future();
+    ASSERT_EQ(admission.admit(std::move(request)), Status::Success);
+
+    batcher.start();
+    {
+        std::unique_lock lock(batch_mutex);
+        ASSERT_TRUE(batch_ready.wait_for(lock, std::chrono::seconds(1), [&completed] {
+            return completed.has_value();
+        }));
+    }
+    EXPECT_EQ(response.get().status, Status::BackendError);
+    batcher.stop();
+
+    ASSERT_TRUE(exec_end.has_value());
+    ASSERT_TRUE(completed.has_value());
+    EXPECT_LE(*exec_end, *completed);
 }
 
 TEST(BoundedQueue, PreservesFifoOrder)
