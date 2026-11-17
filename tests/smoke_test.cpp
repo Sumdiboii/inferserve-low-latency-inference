@@ -367,6 +367,25 @@ TEST(Batcher, DispatchesPartialBatchAfterMaximumDelay)
     EXPECT_EQ(batch_ids, std::vector<RequestId>({RequestId(5)}));
 }
 
+TEST(Batcher, ShutdownDispatchesPendingPartialBatch)
+{
+    RequestAdmission admission(2);
+    TestBackend backend;
+    backend.load();
+    Batcher batcher(admission, backend, 2);
+
+    Request request(RequestId(6), Data{1.0F});
+    std::future<Response> response = request.get_future();
+    ASSERT_EQ(admission.admit(std::move(request)), Status::Success);
+    batcher.start();
+    batcher.stop();
+
+    const Response result = response.get();
+    EXPECT_EQ(result.id, RequestId(6));
+    EXPECT_EQ(result.status, Status::Success);
+    EXPECT_EQ(result.output, Data{1.0F});
+}
+
 TEST(Batcher, SeparatesRequestsWithDifferentInputSizes)
 {
     RequestAdmission admission(4);
