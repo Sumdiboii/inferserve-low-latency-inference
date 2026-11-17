@@ -356,6 +356,44 @@ TEST(Batcher, DispatchesPartialBatchAfterMaximumDelay)
     EXPECT_EQ(batch_ids, std::vector<RequestId>({RequestId(5)}));
 }
 
+TEST(Batcher, SeparatesRequestsWithDifferentInputSizes)
+{
+    RequestAdmission admission(4);
+    std::condition_variable batches_ready;
+    std::mutex batches_mutex;
+    std::vector<std::vector<RequestId>> batches;
+
+    Batcher batcher(admission, 3, [&](const Batcher::RequestBatch& batch) {
+        std::vector<RequestId> ids;
+        for (const Request& request : batch) {
+            ids.push_back(request.id);
+        }
+
+        {
+            std::lock_guard lock(batches_mutex);
+            batches.push_back(std::move(ids));
+        }
+        batches_ready.notify_one();
+    });
+
+    ASSERT_EQ(admission.admit(Request(RequestId(6), Data{1.0F, 2.0F})), Status::Success);
+    ASSERT_EQ(admission.admit(Request(RequestId(7), Data{3.0F})), Status::Success);
+    ASSERT_EQ(admission.admit(Request(RequestId(8), Data{4.0F})), Status::Success);
+
+    batcher.start();
+    {
+        std::unique_lock lock(batches_mutex);
+        ASSERT_TRUE(batches_ready.wait_for(lock, std::chrono::seconds(1), [&batches] {
+            return batches.size() == 2;
+        }));
+    }
+    batcher.stop();
+
+    ASSERT_EQ(batches.size(), 2U);
+    EXPECT_EQ(batches[0], std::vector<RequestId>({RequestId(6)}));
+    EXPECT_EQ(batches[1], std::vector<RequestId>({RequestId(7), RequestId(8)}));
+}
+
 TEST(BoundedQueue, PreservesFifoOrder)
 {
     BoundedQueue<int> queue(3);

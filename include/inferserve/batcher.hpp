@@ -66,7 +66,13 @@ private:
     void run()
     {
         while (true) {
-            std::optional<Request> first = admission_.pop();
+            std::optional<Request> first;
+            if (pending_request_.has_value()) {
+                first = std::move(*pending_request_);
+                pending_request_.reset();
+            } else {
+                first = admission_.pop();
+            }
             if (!first.has_value()) {
                 return;
             }
@@ -78,6 +84,10 @@ private:
             if (max_batch_delay_ == std::chrono::milliseconds::zero()) {
                 Request next(RequestId(0), Data{});
                 while (batch.size() < max_batch_size_ && admission_.try_pop(next)) {
+                    if (next.input.size() != batch.front().input.size()) {
+                        pending_request_ = std::move(next);
+                        break;
+                    }
                     batch.push_back(std::move(next));
                     next = Request(RequestId(0), Data{});
                 }
@@ -93,6 +103,10 @@ private:
                     if (!next.has_value()) {
                         break;
                     }
+                    if (next->input.size() != batch.front().input.size()) {
+                        pending_request_ = std::move(next);
+                        break;
+                    }
                     batch.push_back(std::move(*next));
                 }
             }
@@ -105,6 +119,7 @@ private:
     const std::size_t max_batch_size_;
     BatchCallback callback_;
     const std::chrono::milliseconds max_batch_delay_;
+    std::optional<Request> pending_request_;
     bool started_ = false;
     std::thread thread_;
 };
