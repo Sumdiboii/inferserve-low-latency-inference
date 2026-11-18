@@ -59,6 +59,17 @@ target_link_libraries(inferserve PRIVATE inferserve_onnxruntime)
 add_library(inferserve_sanitizers INTERFACE)
 target_link_libraries(inferserve PRIVATE inferserve_sanitizers)
 
+add_executable(inferserve_onnx_benchmark benchmarks/onnx_runtime_batch_latency.cpp)
+target_include_directories(inferserve_onnx_benchmark PRIVATE include)
+target_link_libraries(inferserve_onnx_benchmark PRIVATE
+    inferserve_warnings
+    inferserve_sanitizers
+    inferserve_onnxruntime
+)
+target_compile_definitions(inferserve_onnx_benchmark PRIVATE
+    INFERSERVE_BENCHMARK_DYNAMIC_BATCH_MODEL_PATH="${CMAKE_CURRENT_SOURCE_DIR}/tests/data/identity_dynamic_batch_2.onnx"
+)
+
 include(CTest)
 
 if(BUILD_TESTING)
