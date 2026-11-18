@@ -127,46 +127,42 @@ instances. Since workers call `infer()` concurrently on that shared instance,
 every implementation must either support concurrent inference or synchronize
 inside `infer()`. `load()` is completed before workers start.
 
-This keeps the current interface and ownership graph simple, and it suits the
-planned ONNX Runtime CPU backend. The project pins ONNX Runtime 1.20.1. In that
-release, `IExecutionProvider::ConcurrentRunSupported()` defaults to `true`,
-and `InferenceSession` guards graph execution with a session mutex only when a
-registered execution provider reports that concurrent `Run()` calls are not
-supported. The default CPU execution provider therefore follows the concurrent
-path. This is an implementation guarantee in the pinned release, not a blanket
-guarantee for every provider or custom operator. A future backend must not
-expose mutable per-call buffers or `RunOptions` state unsafely across calls.
+Phase 6.3 retains one shared `Ort::Session` for the worker pool. The project
+pins ONNX Runtime 1.20.1, and this backend creates default `SessionOptions`
+without registering another execution provider, so the session uses the CPU
+execution provider. In the pinned source, the provider API documents
+`ConcurrentRunSupported()` as the concurrent `InferenceSession::Run()`
+capability and defaults it to `true`; `CPUExecutionProvider` does not override
+that method and therefore inherits the concurrent capability. This is the
+version- and provider-specific contract behind the shared-session decision.
 [ONNX Runtime 1.20.1 execution-provider interface](https://github.com/microsoft/onnxruntime/blob/v1.20.1/include/onnxruntime/core/framework/execution_provider.h)
-and [session run implementation](https://github.com/microsoft/onnxruntime/blob/v1.20.1/onnxruntime/core/session/inference_session.cc).
+and [CPU execution provider declaration](https://github.com/microsoft/onnxruntime/blob/v1.20.1/onnxruntime/core/providers/cpu/cpu_execution_provider.h).
 
-One session also avoids duplicating model/session state and the default
-per-session CPU allocator arena across workers. ONNX Runtime documents that
-each session normally creates its own thread pools and allocator; multiple
-sessions can therefore multiply these resources. Shared/global thread pools
-and allocators exist, but require additional environment configuration and do
-not make a per-worker session model inherently preferable. [ONNX Runtime C API
-overview](https://onnxruntime.ai/docs/get-started/with-c.html).
+Sharing keeps the current backend interface and worker-pool ownership graph
+simple. It avoids duplicating model/session state, the default per-session CPU
+allocator arena, and session initialization across workers. Per-worker sessions
+could isolate provider state or allow independent session configuration, but
+would repeat model loading and session initialization and multiply session
+resources. ONNX Runtime documents that each session normally creates its own
+thread pools and allocator; multiple sessions can therefore multiply these
+resources. Shared/global thread pools and allocators exist, but require
+additional environment configuration. [ONNX Runtime C API overview](https://onnxruntime.ai/docs/get-started/with-c.html).
 
-The trade-off is that the pool has one inference concurrency domain: an
-execution provider that reports concurrent runs unsupported will serialize
-calls inside ONNX Runtime, and one backend that protects mutable state with a
-lock will serialize its own calls. Per-worker backend instances could isolate
-provider state or offer independent session configuration, but would require
-a factory or explicit instance collection, repeated initialization/destruction,
-and deliberate control of per-session intra-op/inter-op pools to avoid
-oversubscribing the worker threads. ONNX Runtime exposes these thread counts
-and defaults session intra-op threading to runtime-selected parallelism; with
-multiple sessions those pools need coordinated sizing. [ONNX Runtime thread
-management](https://onnxruntime.ai/docs/performance/tune-performance/threading.html).
+The trade-off is one session concurrency domain: the selected provider and any
+custom operators must honor safe concurrent execution. A future non-CPU
+provider or custom operator must be checked against its own concurrency
+contract before reuse with this policy. The backend's current per-call tensors,
+buffers, and `RunOptions` are local to each invocation. Per-session intra-op
+and inter-op thread settings remain a separate tuning concern; with multiple
+sessions, their pools would need coordinated sizing to avoid oversubscribing
+worker threads. [ONNX Runtime thread management](https://onnxruntime.ai/docs/performance/tune-performance/threading.html).
 
 The existing `SyntheticBackend` has immutable configuration and uses only
 call-local results, so sharing it is safe. The worker-pool concurrency test
-exercises concurrent calls through one backend instance. Phase 6 must verify
-the selected ONNX Runtime 1.20.1 CPU execution provider and any custom
-operators used by the actual model path; it must also choose explicit worker,
-intra-op, and inter-op settings based on measurements. Per-worker sessions
-remain a future option if that evidence or a backend's concurrency contract
-requires it.
+exercises concurrent calls through one backend instance. The shared-session
+decision applies to the pinned default CPU provider; additional providers and
+custom operators require their own concurrency review. Explicit worker,
+intra-op, and inter-op settings remain future tuning work.
 
 The `OnnxRuntimeBackend` uses the pinned ONNX Runtime CPU 1.20.1 package and
 owns one environment and one session for its lifetime. `load()` inspects one
