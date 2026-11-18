@@ -27,6 +27,11 @@ public:
         try {
             auto env = std::make_unique<Ort::Env>(ORT_LOGGING_LEVEL_WARNING, "inferserve");
             Ort::SessionOptions options;
+            // InferServe parallelizes requests through its worker pool, so limit
+            // per-inference intra-op parallelism initially to reduce oversubscription.
+            options.SetIntraOpNumThreads(1);
+            options.SetInterOpNumThreads(1);
+            options.SetExecutionMode(ORT_SEQUENTIAL);
             auto session = std::make_unique<Ort::Session>(*env, model_path_.c_str(), options);
 
             if (session->GetInputCount() != 1 || session->GetOutputCount() != 1) {

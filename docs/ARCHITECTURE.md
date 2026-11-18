@@ -157,12 +157,20 @@ and inter-op thread settings remain a separate tuning concern; with multiple
 sessions, their pools would need coordinated sizing to avoid oversubscribing
 worker threads. [ONNX Runtime thread management](https://onnxruntime.ai/docs/performance/tune-performance/threading.html).
 
+The ONNX Runtime session uses sequential graph execution with intra-op and
+inter-op thread counts set to 1. The default session would otherwise let ONNX
+Runtime select intra-op parallelism, while the worker pool can make up to its
+configured worker count of concurrent `infer()` calls on the shared session.
+Limiting per-inference parallelism reduces the risk of multiplying CPU
+parallelism across those calls. This is an initial policy, not an optimal
+setting for every model or CPU; revisit it with measurements before tuning.
+
 The existing `SyntheticBackend` has immutable configuration and uses only
 call-local results, so sharing it is safe. The worker-pool concurrency test
 exercises concurrent calls through one backend instance. The shared-session
 decision applies to the pinned default CPU provider; additional providers and
-custom operators require their own concurrency review. Explicit worker,
-intra-op, and inter-op settings remain future tuning work.
+custom operators require their own concurrency review. Worker-count and
+intra-op/inter-op tuning remain future work.
 
 The `OnnxRuntimeBackend` uses the pinned ONNX Runtime CPU 1.20.1 package and
 owns one environment and one session for its lifetime. `load()` inspects one
