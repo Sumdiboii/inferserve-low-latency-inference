@@ -1,10 +1,8 @@
 # InferServe v1 architecture
 
-InferServe is a planned C++20 CPU inference server for measuring how dynamic
-batching policy affects throughput and tail latency. This document describes
-the **intended v1 architecture**. Except for the Phase 0 foundation and
-development infrastructure, the runtime components below are not implemented
-yet.
+InferServe is a C++20 CPU inference server for measuring how dynamic batching
+policy affects throughput and tail latency. This document describes the
+**intended v1 architecture** and records implemented backend behavior below.
 
 ## Design boundaries
 
@@ -169,6 +167,18 @@ operators used by the actual model path; it must also choose explicit worker,
 intra-op, and inter-op settings based on measurements. Per-worker sessions
 remain a future option if that evidence or a backend's concurrency contract
 requires it.
+
+The initial `OnnxRuntimeBackend` uses the pinned ONNX Runtime CPU 1.20.1
+package and owns one environment and one session for its lifetime. `load()`
+inspects the model and accepts exactly one float32 input and output with fixed,
+positive dimensions and batch dimension one. `infer()` currently supports one
+request whose flattened input matches the model shape. The small
+[`Identity` fixture](../tests/data/identity_1x2.onnx) has input and output
+shape `[1, 2]`; it verifies loading, metadata inspection, and an actual CPU
+inference call. General batch tensor packing/output scattering and session
+thread tuning remain for later phases. Phase 6 must also validate the exact
+execution provider and custom operators used by production models; those are
+not established by this fixture.
 
 ## Architectural decisions
 

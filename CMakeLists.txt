@@ -52,8 +52,9 @@ if(INFERSERVE_ONNXRUNTIME_INCLUDE_DIR AND INFERSERVE_ONNXRUNTIME_LIBRARY)
     set_target_properties(inferserve_onnxruntime PROPERTIES IMPORTED_LOCATION "${INFERSERVE_ONNXRUNTIME_LIBRARY}" INTERFACE_INCLUDE_DIRECTORIES "${INFERSERVE_ONNXRUNTIME_INCLUDE_DIR}")
     message(STATUS "Found ONNX Runtime: ${INFERSERVE_ONNXRUNTIME_LIBRARY}")
 else()
-    message(STATUS "ONNX Runtime not found; inference backend remains unavailable")
+    message(FATAL_ERROR "ONNX Runtime CPU 1.20.1 is required; run scripts/download_onnxruntime.sh or set INFERSERVE_ONNXRUNTIME_ROOT")
 endif()
+target_link_libraries(inferserve PRIVATE inferserve_onnxruntime)
 
 add_library(inferserve_sanitizers INTERFACE)
 target_link_libraries(inferserve PRIVATE inferserve_sanitizers)
@@ -80,6 +81,10 @@ if(BUILD_TESTING)
         GTest::gtest_main
         inferserve_warnings
         inferserve_sanitizers
+        inferserve_onnxruntime
+    )
+    target_compile_definitions(inferserve_tests PRIVATE
+        INFERSERVE_TEST_MODEL_PATH="${CMAKE_CURRENT_SOURCE_DIR}/tests/data/identity_1x2.onnx"
     )
 
     include(GoogleTest)

@@ -33,7 +33,11 @@ only then moves it into place.
 CMake discovers the project-local ONNX package when present, or an explicit
 `-DINFERSERVE_ONNXRUNTIME_ROOT=/path` root. It requires
 `include/onnxruntime_c_api.h` and the versioned
-`lib/libonnxruntime.so.1.20.1`, then provides `inferserve_onnxruntime`; ONNX is
-optional and not linked yet. “Not found” is normal before downloading. Check
-tool availability, network/proxy configuration, and the pins for download or
-checksum errors; do not bypass archive validation.
+`lib/libonnxruntime.so.1.20.1`, then provides and links
+`inferserve_onnxruntime`. Configuration fails with an actionable message when
+the pinned package is missing; run the downloader before building.
+
+The integration test uses [`tests/data/identity_1x2.onnx`](../tests/data/identity_1x2.onnx),
+a 68-byte local ONNX protobuf fixture containing one float32 Identity node with
+input and output shape `[1, 2]`. It is a test fixture, not an external model
+download. SHA-256: `887472a11989cbb8a6e8b39db5effcbeebc1d6deac93f6562525b9d76edc199b`.

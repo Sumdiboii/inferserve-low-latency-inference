@@ -7,6 +7,7 @@
 #include <inferserve/bounded_queue.hpp>
 #include <inferserve/core_types.hpp>
 #include <inferserve/request_admission.hpp>
+#include <inferserve/onnx_runtime_backend.hpp>
 #include <inferserve/synthetic_backend.hpp>
 
 #include <algorithm>
@@ -30,6 +31,7 @@ using inferserve::BatchWorkerPool;
 using inferserve::BoundedQueue;
 using inferserve::InferenceResults;
 using inferserve::MonotonicClock;
+using inferserve::OnnxRuntimeBackend;
 using inferserve::Request;
 using inferserve::RequestAdmission;
 using inferserve::RequestId;
@@ -285,6 +287,30 @@ TEST(Backend, ExposesLoadInferenceAndMetadataContract)
     backend.load();
     const InferenceResults results = backend.infer(batch);
     EXPECT_EQ(results, batch);
+}
+
+TEST(OnnxRuntimeBackend, LoadsFixedShapeModelAndRunsOneRequest)
+{
+    OnnxRuntimeBackend backend(INFERSERVE_TEST_MODEL_PATH);
+    backend.load();
+
+    EXPECT_EQ(backend.name(), "onnxruntime");
+    EXPECT_EQ(backend.max_batch_size(), 1U);
+    EXPECT_EQ(backend.input_shape(), (std::vector<int64_t>{1, 2}));
+    EXPECT_EQ(backend.output_shape(), (std::vector<int64_t>{1, 2}));
+    EXPECT_EQ(backend.infer(Batch{Data{3.5F, -2.0F}}), (InferenceResults{Data{3.5F, -2.0F}}));
+}
+
+TEST(OnnxRuntimeBackend, ReportsModelLoadingFailureWithPath)
+{
+    OnnxRuntimeBackend backend("missing-model.onnx");
+
+    try {
+        backend.load();
+        FAIL() << "expected model loading to fail";
+    } catch (const std::runtime_error& error) {
+        EXPECT_NE(std::string(error.what()).find("missing-model.onnx"), std::string::npos);
+    }
 }
 
 TEST(SyntheticBackend, ProducesOrderedDeterministicResults)
