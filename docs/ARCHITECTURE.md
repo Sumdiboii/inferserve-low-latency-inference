@@ -119,6 +119,57 @@ shape, arrival process, batching policy, queue capacities, worker settings,
 backend choice, model details when applicable, hardware/software environment,
 and measurement definitions.
 
+## Backend ownership and concurrency
+
+The worker pool uses one shared backend instance. `BatchWorkerPool` borrows a
+`Backend&`; the owner constructs and loads the backend before starting the pool,
+keeps it alive until the pool has shut down and joined, and destroys it
+afterward. The pool does not own, clone, or initialize separate backend
+instances. Since workers call `infer()` concurrently on that shared instance,
+every implementation must either support concurrent inference or synchronize
+inside `infer()`. `load()` is completed before workers start.
+
+This keeps the current interface and ownership graph simple, and it suits the
+planned ONNX Runtime CPU backend. The project pins ONNX Runtime 1.20.1. In that
+release, `IExecutionProvider::ConcurrentRunSupported()` defaults to `true`,
+and `InferenceSession` guards graph execution with a session mutex only when a
+registered execution provider reports that concurrent `Run()` calls are not
+supported. The default CPU execution provider therefore follows the concurrent
+path. This is an implementation guarantee in the pinned release, not a blanket
+guarantee for every provider or custom operator. A future backend must not
+expose mutable per-call buffers or `RunOptions` state unsafely across calls.
+[ONNX Runtime 1.20.1 execution-provider interface](https://github.com/microsoft/onnxruntime/blob/v1.20.1/include/onnxruntime/core/framework/execution_provider.h)
+and [session run implementation](https://github.com/microsoft/onnxruntime/blob/v1.20.1/onnxruntime/core/session/inference_session.cc).
+
+One session also avoids duplicating model/session state and the default
+per-session CPU allocator arena across workers. ONNX Runtime documents that
+each session normally creates its own thread pools and allocator; multiple
+sessions can therefore multiply these resources. Shared/global thread pools
+and allocators exist, but require additional environment configuration and do
+not make a per-worker session model inherently preferable. [ONNX Runtime C API
+overview](https://onnxruntime.ai/docs/get-started/with-c.html).
+
+The trade-off is that the pool has one inference concurrency domain: an
+execution provider that reports concurrent runs unsupported will serialize
+calls inside ONNX Runtime, and one backend that protects mutable state with a
+lock will serialize its own calls. Per-worker backend instances could isolate
+provider state or offer independent session configuration, but would require
+a factory or explicit instance collection, repeated initialization/destruction,
+and deliberate control of per-session intra-op/inter-op pools to avoid
+oversubscribing the worker threads. ONNX Runtime exposes these thread counts
+and defaults session intra-op threading to runtime-selected parallelism; with
+multiple sessions those pools need coordinated sizing. [ONNX Runtime thread
+management](https://onnxruntime.ai/docs/performance/tune-performance/threading.html).
+
+The existing `SyntheticBackend` has immutable configuration and uses only
+call-local results, so sharing it is safe. The worker-pool concurrency test
+exercises concurrent calls through one backend instance. Phase 6 must verify
+the selected ONNX Runtime 1.20.1 CPU execution provider and any custom
+operators used by the actual model path; it must also choose explicit worker,
+intra-op, and inter-op settings based on measurements. Per-worker sessions
+remain a future option if that evidence or a backend's concurrency contract
+requires it.
+
 ## Architectural decisions
 
 1. The batch timeout starts when the first request enters a batch.
@@ -131,6 +182,8 @@ and measurement definitions.
 8. Scheduling is separate from backend execution.
 9. HTTP transport is separate from the core inference system.
 10. Queues are bounded and overload behavior is explicit.
+11. The worker pool borrows one shared backend; concurrent inference is part
+    of the `Backend` contract.
 
 These are v1 design commitments. They do not assert that the corresponding
 components or measurements already exist in the current repository.
