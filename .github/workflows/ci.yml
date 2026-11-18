@@ -10,6 +10,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install build tools
-        run: sudo apt-get update && sudo apt-get install --yes build-essential cmake git ninja-build
+        run: sudo apt-get update && sudo apt-get install --yes build-essential cmake git ninja-build python3 wget
+      - name: Install pinned ONNX Runtime CPU
+        run: ./scripts/download_onnxruntime.sh
       - name: Configure, build, and test
         run: ./scripts/ci.sh
