@@ -41,3 +41,7 @@ The integration test uses [`tests/data/identity_1x2.onnx`](../tests/data/identit
 a 68-byte local ONNX protobuf fixture containing one float32 Identity node with
 input and output shape `[1, 2]`. It is a test fixture, not an external model
 download. SHA-256: `887472a11989cbb8a6e8b39db5effcbeebc1d6deac93f6562525b9d76edc199b`.
+Batch handling is tested with the 78-byte local fixture
+[`tests/data/identity_dynamic_batch_2.onnx`](../tests/data/identity_dynamic_batch_2.onnx),
+which has the same Identity graph with input and output shape `[batch, 2]`.
+SHA-256: `80223003d94fd150e521a10383ed582a2e290e4991e315dbde100a702ee60b47`.

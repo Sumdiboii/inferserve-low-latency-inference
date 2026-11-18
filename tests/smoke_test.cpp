@@ -313,6 +313,39 @@ TEST(OnnxRuntimeBackend, ReportsModelLoadingFailureWithPath)
     }
 }
 
+TEST(OnnxRuntimeBackend, PacksAndScattersDynamicBatchInRequestOrder)
+{
+    OnnxRuntimeBackend backend(INFERSERVE_TEST_DYNAMIC_BATCH_MODEL_PATH);
+    backend.load();
+    ASSERT_GT(backend.max_batch_size(), 1U);
+
+    const Batch batch{Data{1.25F, -4.0F}, Data{9.5F, 2.0F}, Data{-7.0F, 3.75F}};
+    const InferenceResults results = backend.infer(batch);
+
+    ASSERT_EQ(results.size(), batch.size());
+    for (std::size_t index = 0; index < batch.size(); ++index) {
+        EXPECT_EQ(results[index], batch[index]);
+    }
+}
+
+TEST(OnnxRuntimeBackend, RejectsInputsWithWrongFeatureElementCount)
+{
+    OnnxRuntimeBackend backend(INFERSERVE_TEST_DYNAMIC_BATCH_MODEL_PATH);
+    backend.load();
+
+    EXPECT_THROW(static_cast<void>(backend.infer(Batch{Data{1.0F, 2.0F, 3.0F}})), std::invalid_argument);
+}
+
+TEST(OnnxRuntimeBackend, FixedBatchOneModelRejectsLargerBatches)
+{
+    OnnxRuntimeBackend backend(INFERSERVE_TEST_MODEL_PATH);
+    backend.load();
+
+    EXPECT_EQ(backend.max_batch_size(), 1U);
+    EXPECT_THROW(static_cast<void>(backend.infer(Batch{Data{1.0F, 2.0F}, Data{3.0F, 4.0F}})),
+        std::invalid_argument);
+}
+
 TEST(SyntheticBackend, ProducesOrderedDeterministicResults)
 {
     const SyntheticBackendConfig config{std::chrono::milliseconds(1), std::chrono::milliseconds(1), 4};

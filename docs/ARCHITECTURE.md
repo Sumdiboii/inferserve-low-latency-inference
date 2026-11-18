@@ -168,17 +168,18 @@ intra-op, and inter-op settings based on measurements. Per-worker sessions
 remain a future option if that evidence or a backend's concurrency contract
 requires it.
 
-The initial `OnnxRuntimeBackend` uses the pinned ONNX Runtime CPU 1.20.1
-package and owns one environment and one session for its lifetime. `load()`
-inspects the model and accepts exactly one float32 input and output with fixed,
-positive dimensions and batch dimension one. `infer()` currently supports one
-request whose flattened input matches the model shape. The small
-[`Identity` fixture](../tests/data/identity_1x2.onnx) has input and output
-shape `[1, 2]`; it verifies loading, metadata inspection, and an actual CPU
-inference call. General batch tensor packing/output scattering and session
-thread tuning remain for later phases. Phase 6 must also validate the exact
-execution provider and custom operators used by production models; those are
-not established by this fixture.
+The `OnnxRuntimeBackend` uses the pinned ONNX Runtime CPU 1.20.1 package and
+owns one environment and one session for its lifetime. `load()` inspects one
+float32 input and output. Non-batch dimensions must be fixed and positive; the
+leading batch dimension may be fixed or dynamic. `infer()` packs request data
+in order into a contiguous tensor with the actual batch size, executes once,
+then copies each output slice into the corresponding result. The original
+[`Identity` fixture](../tests/data/identity_1x2.onnx) retains fixed shape
+`[1, 2]` for Phase 6.1 coverage. The small
+[`dynamic batch Identity fixture`](../tests/data/identity_dynamic_batch_2.onnx)
+uses shape `[batch, 2]` to exercise packing and scattering across requests.
+Session thread tuning and validation of production execution providers and
+custom operators remain future work.
 
 ## Architectural decisions
 
