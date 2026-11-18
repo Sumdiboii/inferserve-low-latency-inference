@@ -77,6 +77,7 @@ public:
     [[nodiscard]] InferenceResults infer(const Batch& batch) override
     {
         std::unique_lock lock(mutex_);
+        processed_inputs_.insert(processed_inputs_.end(), batch.begin(), batch.end());
         ++active_;
         if (active_ > maximum_active_) {
             maximum_active_ = active_;
@@ -94,12 +95,18 @@ public:
         std::lock_guard lock(mutex_);
         return maximum_active_;
     }
+    [[nodiscard]] Batch processed_inputs() const
+    {
+        std::lock_guard lock(mutex_);
+        return processed_inputs_;
+    }
 
 private:
     mutable std::mutex mutex_;
     std::condition_variable both_active_;
     std::size_t active_ = 0;
     std::size_t maximum_active_ = 0;
+    Batch processed_inputs_;
 };
 
 class GatedBackend final : public Backend {
@@ -758,6 +765,9 @@ TEST(BatchWorkerPool, ConfiguredWorkersProcessBatchesConcurrently)
     workers.join();
 
     EXPECT_EQ(backend.maximum_active(), 2U);
+    Batch processed_inputs = backend.processed_inputs();
+    std::sort(processed_inputs.begin(), processed_inputs.end());
+    EXPECT_EQ(processed_inputs, Batch({Data{1.0F}, Data{2.0F}}));
     for (std::size_t index = 0; index < completions.size(); ++index) {
         const Response response = completions[index].get();
         EXPECT_EQ(response.id, RequestId(index + 1));
