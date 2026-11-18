@@ -12,11 +12,14 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <condition_variable>
 #include <cstdlib>
+#include <fstream>
 #include <future>
 #include <mutex>
 #include <optional>
+#include <string>
 #include <thread>
 #include <vector>
 
@@ -325,6 +328,54 @@ TEST(OnnxRuntimeBackend, PacksAndScattersDynamicBatchInRequestOrder)
     ASSERT_EQ(results.size(), batch.size());
     for (std::size_t index = 0; index < batch.size(); ++index) {
         EXPECT_EQ(results[index], batch[index]);
+    }
+}
+
+TEST(OnnxRuntimeBackend, MatchesPythonIdentityReferenceOutputs)
+{
+    struct ReferenceCase {
+        std::string name;
+        Batch inputs;
+        InferenceResults expected;
+    };
+
+    std::ifstream reference_file(INFERSERVE_TEST_PYTHON_REFERENCE_PATH);
+    ASSERT_TRUE(reference_file) << "could not open Python reference data";
+
+    std::vector<ReferenceCase> cases;
+    std::string name;
+    float input0 = 0.0F;
+    float input1 = 0.0F;
+    float expected0 = 0.0F;
+    float expected1 = 0.0F;
+    while (reference_file >> name >> input0 >> input1 >> expected0 >> expected1) {
+        if (cases.empty() || cases.back().name != name) {
+            cases.push_back(ReferenceCase{name, {}, {}});
+        }
+        cases.back().inputs.push_back(Data{input0, input1});
+        cases.back().expected.push_back(Data{expected0, expected1});
+    }
+    ASSERT_TRUE(reference_file.eof()) << "malformed Python reference data";
+    ASSERT_EQ(cases.size(), 2U);
+    EXPECT_EQ(cases[0].name, "batch_one");
+    EXPECT_EQ(cases[0].inputs.size(), 1U);
+    EXPECT_EQ(cases[1].name, "batch_three");
+    EXPECT_EQ(cases[1].inputs.size(), 3U);
+
+    OnnxRuntimeBackend backend(INFERSERVE_TEST_DYNAMIC_BATCH_MODEL_PATH);
+    backend.load();
+    for (const ReferenceCase& reference : cases) {
+        const InferenceResults actual = backend.infer(reference.inputs);
+        ASSERT_EQ(actual.size(), reference.expected.size()) << reference.name;
+        for (std::size_t request = 0; request < actual.size(); ++request) {
+            ASSERT_EQ(actual[request].size(), reference.expected[request].size()) << reference.name;
+            for (std::size_t element = 0; element < actual[request].size(); ++element) {
+                const float expected = reference.expected[request][element];
+                const float tolerance = 1.0e-6F + 1.0e-5F * std::abs(expected);
+                EXPECT_NEAR(actual[request][element], expected, tolerance)
+                    << reference.name << " request " << request << " element " << element;
+            }
+        }
     }
 }
 

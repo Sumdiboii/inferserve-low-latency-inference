@@ -1,0 +1,4 @@
+batch_one 3.5 -2 3.5 -2
+batch_three 1.25 -4 1.25 -4
+batch_three 9.5 2 9.5 2
+batch_three -7 3.75 -7 3.75

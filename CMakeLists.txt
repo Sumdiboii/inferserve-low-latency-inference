@@ -86,6 +86,7 @@ if(BUILD_TESTING)
     target_compile_definitions(inferserve_tests PRIVATE
         INFERSERVE_TEST_MODEL_PATH="${CMAKE_CURRENT_SOURCE_DIR}/tests/data/identity_1x2.onnx"
         INFERSERVE_TEST_DYNAMIC_BATCH_MODEL_PATH="${CMAKE_CURRENT_SOURCE_DIR}/tests/data/identity_dynamic_batch_2.onnx"
+        INFERSERVE_TEST_PYTHON_REFERENCE_PATH="${CMAKE_CURRENT_SOURCE_DIR}/tests/data/identity_python_reference.txt"
     )
 
     include(GoogleTest)
