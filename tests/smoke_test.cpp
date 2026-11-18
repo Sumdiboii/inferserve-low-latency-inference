@@ -102,6 +102,30 @@ private:
     std::size_t maximum_active_ = 0;
 };
 
+class GatedBackend final : public Backend {
+public:
+    GatedBackend() : release_(release_promise_.get_future().share()) {}
+
+    void load() override {}
+
+    [[nodiscard]] InferenceResults infer(const Batch& batch) override
+    {
+        entered_.set_value();
+        release_.wait();
+        return batch;
+    }
+
+    [[nodiscard]] std::size_t max_batch_size() const override { return 4; }
+    [[nodiscard]] std::string_view name() const noexcept override { return "gated"; }
+    [[nodiscard]] std::future<void> entered() { return entered_.get_future(); }
+    void release() { release_promise_.set_value(); }
+
+private:
+    std::promise<void> entered_;
+    std::promise<void> release_promise_;
+    std::shared_future<void> release_;
+};
+
 TEST(CoreTypes, RequestIdDistinguishesIdentifiers)
 {
     const RequestId first(1);
@@ -729,8 +753,8 @@ TEST(BatchWorkerPool, ConfiguredWorkersProcessBatchesConcurrently)
         ASSERT_TRUE(dispatch_queue.try_push(std::move(batch)));
     }
 
-    dispatch_queue.shutdown();
     workers.start();
+    workers.shutdown();
     workers.join();
 
     EXPECT_EQ(backend.maximum_active(), 2U);
@@ -740,6 +764,114 @@ TEST(BatchWorkerPool, ConfiguredWorkersProcessBatchesConcurrently)
         EXPECT_EQ(response.status, Status::Success);
         EXPECT_EQ(response.output, Data({static_cast<float>(index + 1)}));
     }
+}
+
+TEST(BatchWorkerPool, ShutdownWakesWorkersWaitingOnEmptyQueue)
+{
+    BatchDispatchQueue dispatch_queue(1);
+    TestBackend backend;
+    backend.load();
+    BatchWorkerPool workers(dispatch_queue, backend, 2);
+
+    workers.start();
+    workers.shutdown();
+    workers.join();
+
+    EXPECT_THROW(workers.start(), std::logic_error);
+}
+
+TEST(BatchWorkerPool, ShutdownDrainsBatchesAlreadyQueued)
+{
+    BatchDispatchQueue dispatch_queue(2);
+    TestBackend backend;
+    backend.load();
+    BatchWorkerPool workers(dispatch_queue, backend, 1);
+    std::vector<std::future<Response>> responses;
+
+    for (std::uint64_t id = 10; id < 12; ++id) {
+        BatchDispatchQueue::RequestBatch batch;
+        Request request(RequestId(id), Data{static_cast<float>(id)});
+        responses.push_back(request.get_future());
+        batch.push_back(std::move(request));
+        ASSERT_TRUE(dispatch_queue.try_push(std::move(batch)));
+    }
+
+    workers.start();
+    workers.shutdown();
+    workers.shutdown();
+    workers.join();
+    workers.join();
+
+    for (std::size_t index = 0; index < responses.size(); ++index) {
+        const Response response = responses[index].get();
+        EXPECT_EQ(response.status, Status::Success);
+        EXPECT_EQ(response.id, RequestId(index + 10));
+    }
+}
+
+TEST(BatchWorkerPool, InFlightInferenceFinishesDuringShutdown)
+{
+    BatchDispatchQueue dispatch_queue(1);
+    GatedBackend backend;
+    std::future<void> entered = backend.entered();
+    BatchWorkerPool workers(dispatch_queue, backend, 1);
+    BatchDispatchQueue::RequestBatch batch;
+    Request request(RequestId(12), Data{3.0F});
+    std::future<Response> response = request.get_future();
+    batch.push_back(std::move(request));
+    ASSERT_TRUE(dispatch_queue.try_push(std::move(batch)));
+
+    workers.start();
+    if (entered.wait_for(std::chrono::seconds(1)) != std::future_status::ready) {
+        backend.release();
+        workers.shutdown();
+        workers.join();
+        FAIL() << "worker did not enter inference";
+    }
+    workers.shutdown();
+    EXPECT_EQ(response.wait_for(std::chrono::milliseconds(0)), std::future_status::timeout);
+    backend.release();
+    workers.join();
+
+    EXPECT_EQ(response.get().status, Status::Success);
+}
+
+TEST(BatchWorkerPool, RejectsJoinBeforeShutdownAndShutdownBeforeStart)
+{
+    BatchDispatchQueue dispatch_queue(1);
+    TestBackend backend;
+    BatchWorkerPool workers(dispatch_queue, backend, 1);
+
+    EXPECT_THROW(workers.shutdown(), std::logic_error);
+    EXPECT_THROW(workers.join(), std::logic_error);
+    workers.start();
+    EXPECT_THROW(workers.join(), std::logic_error);
+    workers.shutdown();
+    workers.join();
+}
+
+TEST(BatchWorkerPool, DestructorHandlesUnstartedAndDrainsStartedPool)
+{
+    BatchDispatchQueue unstarted_queue(1);
+    TestBackend backend;
+    backend.load();
+    { BatchWorkerPool unstarted(unstarted_queue, backend, 1); }
+
+    BatchDispatchQueue dispatch_queue(1);
+    BatchDispatchQueue::RequestBatch batch;
+    Request request(RequestId(13), Data{4.0F});
+    std::future<Response> response = request.get_future();
+    batch.push_back(std::move(request));
+    ASSERT_TRUE(dispatch_queue.try_push(std::move(batch)));
+
+    {
+        BatchWorkerPool started(dispatch_queue, backend, 1);
+        started.start();
+    }
+
+    const Response result = response.get();
+    EXPECT_EQ(result.status, Status::Success);
+    EXPECT_EQ(result.id, RequestId(13));
 }
 
 TEST(BoundedQueue, RejectsInsertionWhenFull)

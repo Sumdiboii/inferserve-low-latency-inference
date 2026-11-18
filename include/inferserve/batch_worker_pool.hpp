@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <mutex>
 #include <optional>
 #include <stdexcept>
 #include <thread>
@@ -25,10 +26,22 @@ public:
     BatchWorkerPool(const BatchWorkerPool&) = delete;
     BatchWorkerPool& operator=(const BatchWorkerPool&) = delete;
 
-    void start()
+    ~BatchWorkerPool()
     {
         if (!workers_.empty()) {
+            shutdown();
+            join();
+        }
+    }
+
+    void start()
+    {
+        std::lock_guard lock(lifecycle_mutex_);
+        if (!workers_.empty()) {
             throw std::logic_error("worker pool cannot be started more than once");
+        }
+        if (shutdown_) {
+            throw std::logic_error("worker pool cannot be started after shutdown");
         }
 
         workers_.reserve(worker_count_);
@@ -37,8 +50,25 @@ public:
         }
     }
 
+    // Call after start() to stop dispatch and let workers drain accepted batches.
+    void shutdown()
+    {
+        std::lock_guard lock(lifecycle_mutex_);
+        if (workers_.empty()) {
+            throw std::logic_error("worker pool cannot be shut down before it is started");
+        }
+        if (!shutdown_) {
+            shutdown_ = true;
+            dispatch_queue_.shutdown();
+        }
+    }
+
     void join()
     {
+        std::lock_guard lock(lifecycle_mutex_);
+        if (workers_.empty() || !shutdown_) {
+            throw std::logic_error("worker pool must be shut down before it is joined");
+        }
         for (std::thread& worker : workers_) {
             if (worker.joinable()) {
                 worker.join();
@@ -102,6 +132,8 @@ private:
     const std::size_t worker_count_;
     MonotonicClock clock_;
     std::vector<std::thread> workers_;
+    std::mutex lifecycle_mutex_;
+    bool shutdown_ = false;
 };
 
 }  // namespace inferserve
