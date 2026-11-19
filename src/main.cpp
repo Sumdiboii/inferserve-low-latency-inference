@@ -2,10 +2,22 @@
 #include <inferserve/request_admission.hpp>
 
 #include <charconv>
+#include <csignal>
 #include <cstdint>
 #include <exception>
 #include <iostream>
 #include <string_view>
+
+namespace {
+
+volatile std::sig_atomic_t shutdown_requested = 0;
+
+void request_shutdown(int)
+{
+    shutdown_requested = 1;
+}
+
+}  // namespace
 
 static_assert(__cplusplus >= 202002L);
 
@@ -30,8 +42,13 @@ int main(int argc, char* argv[])
     try {
         inferserve::RequestAdmission admission(1024);
         inferserve::HttpServer server(admission, port);
+        if (std::signal(SIGINT, request_shutdown) == SIG_ERR ||
+            std::signal(SIGTERM, request_shutdown) == SIG_ERR) {
+            std::cerr << "Failed to register shutdown signal handlers\n";
+            return 1;
+        }
         std::cout << "InferServe listening on port " << server.port() << '\n';
-        server.run();
+        server.run(&shutdown_requested);
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';
         return 1;

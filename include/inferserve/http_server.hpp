@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <csignal>
 #include <cstdint>
 
 #include <inferserve/request_admission.hpp>
@@ -16,7 +17,7 @@ public:
     HttpServer& operator=(const HttpServer&) = delete;
 
     [[nodiscard]] std::uint16_t port() const noexcept { return port_; }
-    void run();
+    void run(const volatile std::sig_atomic_t* shutdown_requested = nullptr);
     void stop() noexcept;
 
 private:

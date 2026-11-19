@@ -7,6 +7,7 @@
 #include <cmath>
 #include <cstring>
 #include <optional>
+#include <poll.h>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -135,6 +136,41 @@ std::string response(int status, std::string_view reason, std::string_view body)
            std::to_string(body.size()) + "\r\nConnection: close\r\n\r\n" + std::string(body);
 }
 
+bool receive_more(int client,
+                  std::array<char, 2048>& buffer,
+                  std::string& request,
+                  const std::atomic<bool>& stopping,
+                  const volatile std::sig_atomic_t* shutdown_requested)
+{
+    while (!stopping.load() && (shutdown_requested == nullptr || *shutdown_requested == 0)) {
+        pollfd connection{client, POLLIN, 0};
+        const int ready = ::poll(&connection, 1, 100);
+        if (ready < 0) {
+            if (errno == EINTR) {
+                continue;
+            }
+            return false;
+        }
+        if (ready == 0) {
+            continue;
+        }
+        if ((connection.revents & POLLIN) == 0) {
+            return false;
+        }
+
+        const ssize_t received = ::recv(client, buffer.data(), buffer.size(), 0);
+        if (received < 0 && errno == EINTR) {
+            continue;
+        }
+        if (received <= 0) {
+            return false;
+        }
+        request.append(buffer.data(), static_cast<std::size_t>(received));
+        return true;
+    }
+    return false;
+}
+
 void send_all(int socket, std::string_view data)
 {
     while (!data.empty()) {
@@ -149,19 +185,18 @@ void send_all(int socket, std::string_view data)
     }
 }
 
-void handle_client(int client, RequestAdmission& admission, std::atomic<std::uint64_t>& next_request_id)
+void handle_client(int client,
+                   RequestAdmission& admission,
+                   std::atomic<std::uint64_t>& next_request_id,
+                   const std::atomic<bool>& stopping,
+                   const volatile std::sig_atomic_t* shutdown_requested)
 {
     std::string request;
     std::array<char, 2048> buffer{};
     while (request.size() < kMaxRequestHeaderSize && request.find("\r\n\r\n") == std::string::npos) {
-        const ssize_t received = ::recv(client, buffer.data(), buffer.size(), 0);
-        if (received < 0 && errno == EINTR) {
-            continue;
-        }
-        if (received <= 0) {
+        if (!receive_more(client, buffer, request, stopping, shutdown_requested)) {
             return;
         }
-        request.append(buffer.data(), static_cast<std::size_t>(received));
     }
 
     const auto header_end = request.find("\r\n\r\n");
@@ -197,15 +232,14 @@ void handle_client(int client, RequestAdmission& admission, std::atomic<std::uin
         }
         const std::size_t body_start = header_end + 4;
         while (request.size() - body_start < *body_length) {
-            const ssize_t received = ::recv(client, buffer.data(), buffer.size(), 0);
-            if (received < 0 && errno == EINTR) {
-                continue;
-            }
-            if (received <= 0) {
+            if (!receive_more(client, buffer, request, stopping, shutdown_requested)) {
+                if (stopping.load() ||
+                    (shutdown_requested != nullptr && *shutdown_requested != 0)) {
+                    return;
+                }
                 send_all(client, response(400, "Bad Request", "{\"error\":\"incomplete request body\"}"));
                 return;
             }
-            request.append(buffer.data(), static_cast<std::size_t>(received));
         }
 
         auto input = parse_input(std::string_view(request.data() + body_start, *body_length));
@@ -275,9 +309,32 @@ HttpServer::~HttpServer()
     }
 }
 
-void HttpServer::run()
+void HttpServer::run(const volatile std::sig_atomic_t* shutdown_requested)
 {
     while (!stopping_.load()) {
+        if (shutdown_requested != nullptr && *shutdown_requested != 0) {
+            stop();
+            return;
+        }
+
+        pollfd listener{socket_, POLLIN, 0};
+        const int ready = ::poll(&listener, 1, 100);
+        if (ready < 0) {
+            if (errno == EINTR) {
+                continue;
+            }
+            if (stopping_.load()) {
+                return;
+            }
+            throw std::runtime_error("HTTP poll failed: " + std::string(std::strerror(errno)));
+        }
+        if (ready == 0) {
+            continue;
+        }
+        if (stopping_.load()) {
+            return;
+        }
+
         const int client = ::accept(socket_, nullptr, nullptr);
         if (client < 0) {
             if (errno == EINTR) {
@@ -288,7 +345,7 @@ void HttpServer::run()
             }
             throw std::runtime_error("HTTP accept failed: " + std::string(std::strerror(errno)));
         }
-        handle_client(client, admission_, next_request_id_);
+        handle_client(client, admission_, next_request_id_, stopping_, shutdown_requested);
         ::close(client);
     }
 }
