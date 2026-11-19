@@ -14,7 +14,10 @@ if(INFERSERVE_ENABLE_ASAN AND INFERSERVE_ENABLE_TSAN)
     message(FATAL_ERROR "AddressSanitizer and ThreadSanitizer cannot be enabled together")
 endif()
 
-add_executable(inferserve src/main.cpp)
+add_executable(inferserve
+    src/main.cpp
+    src/http_server.cpp
+)
 set_target_properties(inferserve PROPERTIES
     CXX_STANDARD 20
     CXX_STANDARD_REQUIRED ON
@@ -86,7 +89,11 @@ if(BUILD_TESTING)
     )
     FetchContent_MakeAvailable(googletest)
 
-    add_executable(inferserve_tests tests/smoke_test.cpp)
+    add_executable(inferserve_tests
+        tests/smoke_test.cpp
+        tests/http_server_test.cpp
+        src/http_server.cpp
+    )
     target_include_directories(inferserve_tests PRIVATE include)
     target_link_libraries(inferserve_tests PRIVATE
         GTest::gtest_main
