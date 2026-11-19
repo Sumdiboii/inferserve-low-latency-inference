@@ -42,9 +42,16 @@ std::string get_response(std::uint16_t port, const std::string& request)
     return response;
 }
 
+std::string post_infer(std::uint16_t port, const std::string& body)
+{
+    return get_response(port,
+        "POST /infer HTTP/1.1\r\nHost: localhost\r\nContent-Length: " +
+            std::to_string(body.size()) + "\r\n\r\n" + body);
+}
+
 TEST(HttpServer, RegistersHealthAndInferenceEndpoints)
 {
-    inferserve::RequestAdmission admission(4);
+    inferserve::RequestAdmission admission(1);
     inferserve::HttpServer server(admission, 0);
     std::thread server_thread([&server] { server.run(); });
 
@@ -53,13 +60,21 @@ TEST(HttpServer, RegistersHealthAndInferenceEndpoints)
     EXPECT_NE(health.find("{\"status\":\"ok\"}"), std::string::npos);
 
     const std::string body = "{\"input\":[1.5,-2,3]}";
-    const std::string inference = get_response(server.port(),
-        "POST /infer HTTP/1.1\r\nHost: localhost\r\nContent-Length: " +
-            std::to_string(body.size()) + "\r\n\r\n" + body);
+    const std::string inference = post_infer(server.port(), body);
     EXPECT_NE(inference.find("HTTP/1.1 202 Accepted"), std::string::npos);
+
+    const std::string invalid = post_infer(server.port(), "{\"input\":[]}");
+    EXPECT_NE(invalid.find("HTTP/1.1 400 Bad Request"), std::string::npos);
+    EXPECT_NE(invalid.find("invalid inference input"), std::string::npos);
+
+    const std::string full = post_infer(server.port(), body);
+    EXPECT_NE(full.find("HTTP/1.1 503 Service Unavailable"), std::string::npos);
+    EXPECT_NE(full.find("request was not accepted"), std::string::npos);
 
     inferserve::Request queued(inferserve::RequestId(0), {});
     const bool was_queued = admission.try_pop(queued);
+    inferserve::Request rejected(inferserve::RequestId(0), {});
+    const bool rejection_was_queued = admission.try_pop(rejected);
     server.stop();
     server_thread.join();
 
@@ -67,6 +82,7 @@ TEST(HttpServer, RegistersHealthAndInferenceEndpoints)
     EXPECT_EQ(queued.id, inferserve::RequestId(1));
     EXPECT_EQ(queued.input, (inferserve::Data{1.5F, -2.0F, 3.0F}));
     EXPECT_TRUE(queued.enqueued.has_value());
+    EXPECT_FALSE(rejection_was_queued);
 }
 
 }  // namespace
