@@ -1,4 +1,5 @@
 #include <inferserve/http_server.hpp>
+#include <inferserve/request_admission.hpp>
 
 #include <charconv>
 #include <cstdint>
@@ -27,7 +28,8 @@ int main(int argc, char* argv[])
     }
 
     try {
-        inferserve::HttpServer server(port);
+        inferserve::RequestAdmission admission(1024);
+        inferserve::HttpServer server(admission, port);
         std::cout << "InferServe listening on port " << server.port() << '\n';
         server.run();
     } catch (const std::exception& error) {

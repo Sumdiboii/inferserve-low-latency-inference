@@ -2,10 +2,16 @@
 
 #include <array>
 #include <cerrno>
+#include <charconv>
+#include <cctype>
+#include <cmath>
 #include <cstring>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <system_error>
+#include <utility>
 
 #include <arpa/inet.h>
 #include <netinet/in.h>
@@ -16,6 +22,111 @@ namespace inferserve {
 namespace {
 
 constexpr std::size_t kMaxRequestHeaderSize = 16 * 1024;
+
+void skip_whitespace(std::string_view text, std::size_t& position)
+{
+    while (position < text.size() && (text[position] == ' ' || text[position] == '\t' ||
+                                      text[position] == '\r' || text[position] == '\n')) {
+        ++position;
+    }
+}
+
+std::optional<Data> parse_input(std::string_view body)
+{
+    std::size_t position = 0;
+    skip_whitespace(body, position);
+    if (position >= body.size() || body[position++] != '{') {
+        return std::nullopt;
+    }
+    skip_whitespace(body, position);
+    constexpr std::string_view key = "\"input\"";
+    if (body.substr(position, key.size()) != key) {
+        return std::nullopt;
+    }
+    position += key.size();
+    skip_whitespace(body, position);
+    if (position >= body.size() || body[position++] != ':') {
+        return std::nullopt;
+    }
+    skip_whitespace(body, position);
+    if (position >= body.size() || body[position++] != '[') {
+        return std::nullopt;
+    }
+
+    Data input;
+    skip_whitespace(body, position);
+    while (position < body.size() && body[position] != ']') {
+        float value = 0.0F;
+        const char* begin = body.data() + position;
+        const char* end = body.data() + body.size();
+        const auto [parsed_end, error] = std::from_chars(begin, end, value);
+        if (error != std::errc{} || parsed_end == begin || !std::isfinite(value)) {
+            return std::nullopt;
+        }
+        position = static_cast<std::size_t>(parsed_end - body.data());
+        input.push_back(value);
+        skip_whitespace(body, position);
+        if (position < body.size() && body[position] == ',') {
+            ++position;
+            skip_whitespace(body, position);
+            if (position >= body.size() || body[position] == ']') {
+                return std::nullopt;
+            }
+        } else {
+            break;
+        }
+    }
+
+    if (position >= body.size() || body[position++] != ']') {
+        return std::nullopt;
+    }
+    skip_whitespace(body, position);
+    if (position >= body.size() || body[position++] != '}') {
+        return std::nullopt;
+    }
+    skip_whitespace(body, position);
+    if (position != body.size()) {
+        return std::nullopt;
+    }
+    return input;
+}
+
+std::optional<std::size_t> content_length(std::string_view headers)
+{
+    std::size_t line_start = headers.find("\r\n");
+    if (line_start == std::string_view::npos) {
+        return std::nullopt;
+    }
+    line_start += 2;
+    while (line_start < headers.size()) {
+        const std::size_t line_end = headers.find("\r\n", line_start);
+        if (line_end == std::string_view::npos || line_end == line_start) {
+            break;
+        }
+        const std::string_view line = headers.substr(line_start, line_end - line_start);
+        const std::size_t colon = line.find(':');
+        if (colon != std::string_view::npos) {
+            std::string name(line.substr(0, colon));
+            for (char& character : name) {
+                character = static_cast<char>(std::tolower(static_cast<unsigned char>(character)));
+            }
+            if (name == "content-length") {
+                std::string_view value = line.substr(colon + 1);
+                while (!value.empty() && (value.front() == ' ' || value.front() == '\t')) {
+                    value.remove_prefix(1);
+                }
+                std::size_t length = 0;
+                const auto [end, error] = std::from_chars(value.data(), value.data() + value.size(), length);
+                if (error != std::errc{} || end != value.data() + value.size()) {
+                    return std::nullopt;
+                }
+                return length;
+            }
+        }
+        line_start = line_end + 2;
+    }
+    return std::size_t{0};
+}
 
 std::string response(int status, std::string_view reason, std::string_view body)
 {
@@ -38,7 +149,7 @@ void send_all(int socket, std::string_view data)
     }
 }
 
-void handle_client(int client)
+void handle_client(int client, RequestAdmission& admission, std::atomic<std::uint64_t>& next_request_id)
 {
     std::string request;
     std::array<char, 2048> buffer{};
@@ -53,11 +164,12 @@ void handle_client(int client)
         request.append(buffer.data(), static_cast<std::size_t>(received));
     }
 
-    const auto line_end = request.find("\r\n");
-    if (line_end == std::string::npos) {
+    const auto header_end = request.find("\r\n\r\n");
+    if (header_end == std::string::npos) {
         send_all(client, response(400, "Bad Request", "{\"error\":\"bad request\"}"));
         return;
     }
+    const auto line_end = request.find("\r\n");
     const std::string_view request_line(request.data(), line_end);
     const auto method_end = request_line.find(' ');
     const auto target_end = method_end == std::string_view::npos
@@ -78,7 +190,39 @@ void handle_client(int client)
     } else if (method == "GET" && path == "/health") {
         send_all(client, response(200, "OK", "{\"status\":\"ok\"}"));
     } else if (method == "POST" && path == "/infer") {
-        send_all(client, response(501, "Not Implemented", "{\"error\":\"inference handling not implemented\"}"));
+        const auto body_length = content_length(std::string_view(request.data(), header_end + 2));
+        if (!body_length.has_value()) {
+            send_all(client, response(400, "Bad Request", "{\"error\":\"invalid request body\"}"));
+            return;
+        }
+        const std::size_t body_start = header_end + 4;
+        while (request.size() - body_start < *body_length) {
+            const ssize_t received = ::recv(client, buffer.data(), buffer.size(), 0);
+            if (received < 0 && errno == EINTR) {
+                continue;
+            }
+            if (received <= 0) {
+                send_all(client, response(400, "Bad Request", "{\"error\":\"incomplete request body\"}"));
+                return;
+            }
+            request.append(buffer.data(), static_cast<std::size_t>(received));
+        }
+
+        auto input = parse_input(std::string_view(request.data() + body_start, *body_length));
+        if (!input.has_value()) {
+            send_all(client, response(400, "Bad Request", "{\"error\":\"invalid inference input\"}"));
+            return;
+        }
+
+        const std::uint64_t request_id = next_request_id.fetch_add(1);
+        const Status status = admission.admit(Request(RequestId(request_id), std::move(*input)));
+        if (status == Status::Success) {
+            send_all(client, response(202, "Accepted", "{\"request_id\":" + std::to_string(request_id) + "}"));
+        } else if (status == Status::InvalidInput) {
+            send_all(client, response(400, "Bad Request", "{\"error\":\"invalid inference input\"}"));
+        } else {
+            send_all(client, response(503, "Service Unavailable", "{\"error\":\"request was not accepted\"}"));
+        }
     } else {
         send_all(client, response(404, "Not Found", "{\"error\":\"not found\"}"));
     }
@@ -86,7 +230,7 @@ void handle_client(int client)
 
 }  // namespace
 
-HttpServer::HttpServer(std::uint16_t port)
+HttpServer::HttpServer(RequestAdmission& admission, std::uint16_t port) : admission_(admission)
 {
     socket_ = ::socket(AF_INET, SOCK_STREAM, 0);
     if (socket_ < 0) {
@@ -144,7 +288,7 @@ void HttpServer::run()
             }
             throw std::runtime_error("HTTP accept failed: " + std::string(std::strerror(errno)));
         }
-        handle_client(client);
+        handle_client(client, admission_, next_request_id_);
         ::close(client);
     }
 }

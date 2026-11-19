@@ -44,19 +44,29 @@ std::string get_response(std::uint16_t port, const std::string& request)
 
 TEST(HttpServer, RegistersHealthAndInferenceEndpoints)
 {
-    inferserve::HttpServer server(0);
+    inferserve::RequestAdmission admission(4);
+    inferserve::HttpServer server(admission, 0);
     std::thread server_thread([&server] { server.run(); });
 
     const std::string health = get_response(server.port(), "GET /health?check=1 HTTP/1.1\r\nHost: localhost\r\n\r\n");
     EXPECT_NE(health.find("HTTP/1.1 200 OK"), std::string::npos);
     EXPECT_NE(health.find("{\"status\":\"ok\"}"), std::string::npos);
 
-    const std::string inference = get_response(
-        server.port(), "POST /infer HTTP/1.1\r\nHost: localhost\r\nContent-Length: 0\r\n\r\n");
-    EXPECT_NE(inference.find("HTTP/1.1 501 Not Implemented"), std::string::npos);
+    const std::string body = "{\"input\":[1.5,-2,3]}";
+    const std::string inference = get_response(server.port(),
+        "POST /infer HTTP/1.1\r\nHost: localhost\r\nContent-Length: " +
+            std::to_string(body.size()) + "\r\n\r\n" + body);
+    EXPECT_NE(inference.find("HTTP/1.1 202 Accepted"), std::string::npos);
 
+    inferserve::Request queued(inferserve::RequestId(0), {});
+    const bool was_queued = admission.try_pop(queued);
     server.stop();
     server_thread.join();
+
+    ASSERT_TRUE(was_queued);
+    EXPECT_EQ(queued.id, inferserve::RequestId(1));
+    EXPECT_EQ(queued.input, (inferserve::Data{1.5F, -2.0F, 3.0F}));
+    EXPECT_TRUE(queued.enqueued.has_value());
 }
 
 }  // namespace

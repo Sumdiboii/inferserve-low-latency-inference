@@ -3,11 +3,13 @@
 #include <atomic>
 #include <cstdint>
 
+#include <inferserve/request_admission.hpp>
+
 namespace inferserve {
 
 class HttpServer {
 public:
-    explicit HttpServer(std::uint16_t port);
+    HttpServer(RequestAdmission& admission, std::uint16_t port);
     ~HttpServer();
 
     HttpServer(const HttpServer&) = delete;
@@ -20,6 +22,8 @@ public:
 private:
     int socket_ = -1;
     std::uint16_t port_ = 0;
+    RequestAdmission& admission_;
+    std::atomic<std::uint64_t> next_request_id_{1};
     std::atomic<bool> stopping_{false};
 };
 
