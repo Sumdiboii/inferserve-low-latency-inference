@@ -62,6 +62,12 @@ target_link_libraries(inferserve PRIVATE inferserve_onnxruntime)
 add_library(inferserve_sanitizers INTERFACE)
 target_link_libraries(inferserve PRIVATE inferserve_sanitizers)
 
+add_executable(inferserve_load_generator src/load_generator/main.cpp)
+target_link_libraries(inferserve_load_generator PRIVATE
+    inferserve_warnings
+    inferserve_sanitizers
+)
+
 add_executable(inferserve_onnx_benchmark benchmarks/onnx_runtime_batch_latency.cpp)
 target_include_directories(inferserve_onnx_benchmark PRIVATE include)
 target_link_libraries(inferserve_onnx_benchmark PRIVATE
