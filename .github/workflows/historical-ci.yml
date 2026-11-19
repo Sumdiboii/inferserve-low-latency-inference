@@ -1,0 +1,67 @@
+name: Historical CI
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  list-commits:
+    runs-on: ubuntu-24.04
+    outputs:
+      commits: ${{ steps.commits.outputs.matrix }}
+    steps:
+      - name: Checkout full history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Build commit matrix
+        id: commits
+        shell: bash
+        run: |
+          set -euo pipefail
+          matrix=$(git log --format='{"sha":"%H","short":"%h"}' main | jq -s -c '.')
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+
+  test-commit:
+    needs: list-commits
+    name: ${{ matrix.commit.short }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        commit: ${{ fromJSON(needs.list-commits.outputs.commits) }}
+    steps:
+      - name: Install build tools
+        run: sudo apt-get update && sudo apt-get install --yes build-essential cmake git ninja-build python3 wget jq
+      - name: Checkout commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ matrix.commit.sha }}
+          fetch-depth: 0
+      - name: Install ONNX Runtime when required
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -f scripts/download_onnxruntime.sh ]; then
+            bash scripts/download_onnxruntime.sh
+          else
+            echo "This commit predates the ONNX Runtime dependency."
+          fi
+      - name: Configure, build, and test
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -f scripts/ci.sh ]; then
+            bash scripts/ci.sh
+          elif [ -f CMakeLists.txt ]; then
+            cmake -S . -B build/historical -G Ninja \
+              -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTING=ON
+            cmake --build build/historical
+            ctest --test-dir build/historical --output-on-failure
+          else
+            echo "No supported CMake build found in this commit." >&2
+            exit 1
+          fi
