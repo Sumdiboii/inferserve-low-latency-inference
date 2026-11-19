@@ -1,12 +1,20 @@
 #include <gtest/gtest.h>
 
+#include <inferserve/backend.hpp>
+#include <inferserve/batcher.hpp>
+#include <inferserve/batch_dispatch_queue.hpp>
+#include <inferserve/batch_worker_pool.hpp>
 #include <inferserve/http_server.hpp>
+#include <inferserve/onnx_runtime_backend.hpp>
 
 #include <chrono>
 #include <csignal>
+#include <cstddef>
 #include <future>
 #include <string>
+#include <string_view>
 #include <thread>
+#include <utility>
 
 #include <arpa/inet.h>
 #include <netinet/in.h>
@@ -22,6 +30,28 @@ void request_shutdown(int)
 {
     shutdown_requested = 1;
 }
+
+class RecordingOnnxBackend final : public inferserve::Backend {
+public:
+    explicit RecordingOnnxBackend(std::string model_path) : backend_(std::move(model_path)) {}
+
+    void load() override { backend_.load(); }
+
+    [[nodiscard]] inferserve::InferenceResults infer(const inferserve::Batch& batch) override
+    {
+        inferserve::InferenceResults results = backend_.infer(batch);
+        result_promise_.set_value(results);
+        return results;
+    }
+
+    [[nodiscard]] std::size_t max_batch_size() const override { return backend_.max_batch_size(); }
+    [[nodiscard]] std::string_view name() const noexcept override { return backend_.name(); }
+    [[nodiscard]] std::future<inferserve::InferenceResults> result() { return result_promise_.get_future(); }
+
+private:
+    inferserve::OnnxRuntimeBackend backend_;
+    std::promise<inferserve::InferenceResults> result_promise_;
+};
 
 std::string get_response(std::uint16_t port, const std::string& request)
 {
@@ -94,6 +124,42 @@ TEST(HttpServer, RegistersHealthAndInferenceEndpoints)
     EXPECT_EQ(queued.input, (inferserve::Data{1.5F, -2.0F, 3.0F}));
     EXPECT_TRUE(queued.enqueued.has_value());
     EXPECT_FALSE(rejection_was_queued);
+}
+
+TEST(HttpServer, EndToEndInferenceRunsThroughOnnxBackend)
+{
+    RecordingOnnxBackend backend(INFERSERVE_TEST_DYNAMIC_BATCH_MODEL_PATH);
+    backend.load();
+    std::future<inferserve::InferenceResults> inference_result = backend.result();
+    inferserve::RequestAdmission admission(4);
+    inferserve::BatchDispatchQueue dispatch_queue(4);
+    inferserve::Batcher batcher(admission, dispatch_queue, 2, std::chrono::milliseconds(10));
+    inferserve::BatchWorkerPool workers(dispatch_queue, backend, 1);
+    inferserve::HttpServer server(admission, 0);
+
+    workers.start();
+    batcher.start();
+    std::thread server_thread([&server] { server.run(); });
+
+    const std::string http_response = post_infer(server.port(), "{\"input\":[1.5,-2.25]}");
+    const bool inference_completed = inference_result.wait_for(std::chrono::seconds(2)) ==
+                                     std::future_status::ready;
+    inferserve::InferenceResults outputs;
+    if (inference_completed) {
+        outputs = inference_result.get();
+    }
+
+    server.stop();
+    server_thread.join();
+    batcher.stop();
+    workers.shutdown();
+    workers.join();
+
+    EXPECT_NE(http_response.find("HTTP/1.1 202 Accepted"), std::string::npos);
+    EXPECT_NE(http_response.find("{\"request_id\":1}"), std::string::npos);
+    ASSERT_TRUE(inference_completed);
+    ASSERT_EQ(outputs.size(), 1U);
+    EXPECT_EQ(outputs.front(), (inferserve::Data{1.5F, -2.25F}));
 }
 
 TEST(HttpServer, SignalFlagStopsServerWhileClientRequestIsIncomplete)
