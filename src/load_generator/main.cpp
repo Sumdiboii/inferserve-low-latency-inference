@@ -1,3 +1,4 @@
+#include "open_loop_executor.hpp"
 #include "traffic_pattern.hpp"
 
 #include <charconv>
@@ -6,6 +7,7 @@
 #include <exception>
 #include <iomanip>
 #include <iostream>
+#include <mutex>
 #include <string_view>
 #include <system_error>
 #include <vector>
@@ -75,9 +77,13 @@ int main(int argc, char* argv[])
         }
 
         std::cout << std::fixed << std::setprecision(9);
-        for (const double time_seconds : arrivals) {
-            std::cout << time_seconds << '\n';
-        }
+        std::mutex output_mutex;
+        inferserve::load_generator::execute_open_loop(
+            arrivals,
+            [&output_mutex](std::size_t index, double scheduled_seconds) {
+                const std::lock_guard lock(output_mutex);
+                std::cout << "simulated request " << index << " scheduled at " << scheduled_seconds << " seconds\n";
+            });
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';
         return 1;

@@ -64,6 +64,7 @@ target_link_libraries(inferserve PRIVATE inferserve_sanitizers)
 
 add_executable(inferserve_load_generator
     src/load_generator/main.cpp
+    src/load_generator/open_loop_executor.cpp
     src/load_generator/traffic_pattern.cpp
 )
 target_include_directories(inferserve_load_generator PRIVATE src/load_generator)
@@ -118,7 +119,9 @@ if(BUILD_TESTING)
     )
 
     add_executable(inferserve_load_generator_tests
+        tests/load_generator_open_loop_test.cpp
         tests/load_generator_traffic_pattern_test.cpp
+        src/load_generator/open_loop_executor.cpp
         src/load_generator/traffic_pattern.cpp
     )
     target_include_directories(inferserve_load_generator_tests PRIVATE src/load_generator)
