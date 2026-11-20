@@ -1,3 +1,4 @@
+#include "closed_loop_executor.hpp"
 #include "open_loop_executor.hpp"
 #include "csv_export.hpp"
 #include "dispatch_lag.hpp"
@@ -48,7 +49,8 @@ void print_usage()
     std::cerr << "Usage:\n"
                  "  inferserve_load_generator fixed-rate <count> <rate-per-second> [--csv <output-file>]\n"
                  "  inferserve_load_generator burst <count> [--csv <output-file>]\n"
-                 "  inferserve_load_generator poisson <count> <rate-per-second> <seed> [--csv <output-file>]\n";
+                 "  inferserve_load_generator poisson <count> <rate-per-second> <seed> [--csv <output-file>]\n"
+                 "  inferserve_load_generator closed-loop <count> [--csv <output-file>]\n";
 }
 
 }  // namespace
@@ -70,7 +72,27 @@ int main(int argc, char* argv[])
         std::vector<double> arrivals;
         const std::string_view pattern(argv[1]);
         std::string_view csv_output_path;
-        if (pattern == "fixed-rate") {
+        std::cout << std::fixed << std::setprecision(3);
+        std::mutex output_mutex;
+        const auto simulate_request = [&output_mutex, closed_loop = pattern == "closed-loop"](
+                                          std::size_t index, double scheduled_seconds) {
+            const std::lock_guard lock(output_mutex);
+            if (closed_loop) {
+                std::cout << "closed-loop simulated request ";
+            } else {
+                std::cout << "simulated request ";
+            }
+            std::cout << index << " scheduled at " << scheduled_seconds << " seconds\n";
+        };
+        std::vector<inferserve::load_generator::RequestTimestamps> records;
+
+        if (pattern == "closed-loop") {
+            if (!parse_csv_output_option(argc, argv, 3, csv_output_path)) {
+                print_usage();
+                return 1;
+            }
+            records = inferserve::load_generator::execute_closed_loop(count, simulate_request);
+        } else if (pattern == "fixed-rate") {
             if (!parse_csv_output_option(argc, argv, 4, csv_output_path)) {
                 print_usage();
                 return 1;
@@ -105,14 +127,10 @@ int main(int argc, char* argv[])
             return 1;
         }
 
-        std::cout << std::fixed << std::setprecision(3);
-        std::mutex output_mutex;
-        const auto records = inferserve::load_generator::execute_open_loop(
-            arrivals,
-            [&output_mutex](std::size_t index, double scheduled_seconds) {
-                const std::lock_guard lock(output_mutex);
-                std::cout << "simulated request " << index << " scheduled at " << scheduled_seconds << " seconds\n";
-            });
+        if (pattern != "closed-loop") {
+            records = inferserve::load_generator::execute_open_loop(arrivals, simulate_request);
+        }
+
         if (!csv_output_path.empty()) {
             inferserve::load_generator::export_records_csv(std::string(csv_output_path), records);
         }
