@@ -2,9 +2,11 @@
 
 #include "open_loop_executor.hpp"
 
+#include <algorithm>
 #include <chrono>
 #include <condition_variable>
 #include <mutex>
+#include <set>
 #include <thread>
 #include <vector>
 
@@ -49,6 +51,43 @@ TEST(OpenLoopExecutor, LaterArrivalStartsWhileEarlierExecutionIsStillBlocked)
 
     EXPECT_TRUE(first_started);
     EXPECT_TRUE(second_started_before_release);
+}
+
+TEST(OpenLoopExecutor, UsesBoundedWorkersForManySimultaneousArrivals)
+{
+    constexpr std::size_t request_count = 32;
+    std::mutex mutex;
+    std::condition_variable condition;
+    std::size_t active_callbacks = 0;
+    std::size_t maximum_active_callbacks = 0;
+    bool release_callbacks = false;
+    std::set<std::thread::id> callback_threads;
+    std::vector<double> arrivals(request_count, 0.0);
+
+    std::thread scheduler([&] {
+        static_cast<void>(execute_open_loop(arrivals, [&](std::size_t, double) {
+            std::unique_lock lock(mutex);
+            ++active_callbacks;
+            maximum_active_callbacks = std::max(maximum_active_callbacks, active_callbacks);
+            callback_threads.insert(std::this_thread::get_id());
+            condition.notify_all();
+            condition.wait(lock, [&] { return release_callbacks; });
+            --active_callbacks;
+        }));
+    });
+
+    bool worker_limit_reached = false;
+    {
+        std::unique_lock lock(mutex);
+        worker_limit_reached = condition.wait_for(lock, 1s, [&] { return active_callbacks >= 4; });
+        release_callbacks = true;
+        condition.notify_all();
+    }
+    scheduler.join();
+
+    EXPECT_TRUE(worker_limit_reached);
+    EXPECT_EQ(maximum_active_callbacks, 4U);
+    EXPECT_EQ(callback_threads.size(), 4U);
 }
 
 TEST(OpenLoopExecutor, RecordsOrderedRequestTimestampsAroundCallbackExecution)
