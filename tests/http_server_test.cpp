@@ -6,6 +6,7 @@
 #include <inferserve/batch_worker_pool.hpp>
 #include <inferserve/http_server.hpp>
 #include <inferserve/onnx_runtime_backend.hpp>
+#include <inferserve/server_runtime.hpp>
 
 #include <chrono>
 #include <csignal>
@@ -129,17 +130,10 @@ TEST(HttpServer, RegistersHealthAndInferenceEndpoints)
 TEST(HttpServer, EndToEndInferenceRunsThroughOnnxBackend)
 {
     RecordingOnnxBackend backend(INFERSERVE_TEST_DYNAMIC_BATCH_MODEL_PATH);
-    backend.load();
     std::future<inferserve::InferenceResults> inference_result = backend.result();
-    inferserve::RequestAdmission admission(4);
-    inferserve::BatchDispatchQueue dispatch_queue(4);
-    inferserve::Batcher batcher(admission, dispatch_queue, 2, std::chrono::milliseconds(10));
-    inferserve::BatchWorkerPool workers(dispatch_queue, backend, 1);
-    inferserve::HttpServer server(admission, 0);
-
-    workers.start();
-    batcher.start();
-    std::thread server_thread([&server] { server.run(); });
+    volatile std::sig_atomic_t stop_requested = 0;
+    inferserve::ServerRuntime server(backend, 0);
+    std::thread server_thread([&] { server.run(&stop_requested); });
 
     const std::string http_response = post_infer(server.port(), "{\"input\":[1.5,-2.25]}");
     const bool inference_completed = inference_result.wait_for(std::chrono::seconds(2)) ==
@@ -149,11 +143,8 @@ TEST(HttpServer, EndToEndInferenceRunsThroughOnnxBackend)
         outputs = inference_result.get();
     }
 
-    server.stop();
+    stop_requested = 1;
     server_thread.join();
-    batcher.stop();
-    workers.shutdown();
-    workers.join();
 
     EXPECT_NE(http_response.find("HTTP/1.1 202 Accepted"), std::string::npos);
     EXPECT_NE(http_response.find("{\"request_id\":1}"), std::string::npos);

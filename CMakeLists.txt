@@ -17,6 +17,7 @@ endif()
 add_executable(inferserve
     src/main.cpp
     src/http_server.cpp
+    src/server_runtime.cpp
 )
 set_target_properties(inferserve PROPERTIES
     CXX_STANDARD 20
@@ -107,6 +108,7 @@ if(BUILD_TESTING)
         tests/smoke_test.cpp
         tests/http_server_test.cpp
         src/http_server.cpp
+        src/server_runtime.cpp
     )
     target_include_directories(inferserve_tests PRIVATE include)
     target_link_libraries(inferserve_tests PRIVATE
