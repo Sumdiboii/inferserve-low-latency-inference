@@ -128,6 +128,23 @@ TEST(HttpServer, RegistersHealthAndInferenceEndpoints)
     EXPECT_FALSE(rejection_was_queued);
 }
 
+TEST(HttpServer, RejectsRequestBodyLargerThanOneMiB)
+{
+    inferserve::RequestAdmission admission(1);
+    inferserve::HttpServer server(admission, 0);
+    std::thread server_thread([&server] { server.run(); });
+
+    constexpr std::size_t oversized_body_length = 1024 * 1024 + 1;
+    const std::string request =
+        "POST /infer HTTP/1.1\r\nHost: localhost\r\nContent-Length: " +
+        std::to_string(oversized_body_length) + "\r\n\r\n";
+    const std::string response = get_response(server.port(), request);
+    server.stop();
+    server_thread.join();
+
+    EXPECT_NE(response.find("HTTP/1.1 413 Payload Too Large"), std::string::npos);
+}
+
 TEST(HttpServer, StalledClientDoesNotBlockFollowingClient)
 {
     inferserve::RequestAdmission admission(2);
