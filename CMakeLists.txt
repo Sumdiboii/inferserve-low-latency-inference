@@ -62,6 +62,20 @@ target_link_libraries(inferserve PRIVATE inferserve_onnxruntime)
 add_library(inferserve_sanitizers INTERFACE)
 target_link_libraries(inferserve PRIVATE inferserve_sanitizers)
 
+add_executable(inferserve_load_generator
+    src/load_generator/closed_loop_executor.cpp
+    src/load_generator/csv_export.cpp
+    src/load_generator/dispatch_lag.cpp
+    src/load_generator/main.cpp
+    src/load_generator/open_loop_executor.cpp
+    src/load_generator/traffic_pattern.cpp
+)
+target_include_directories(inferserve_load_generator PRIVATE src/load_generator)
+target_link_libraries(inferserve_load_generator PRIVATE
+    inferserve_warnings
+    inferserve_sanitizers
+)
+
 add_executable(inferserve_onnx_benchmark benchmarks/onnx_runtime_batch_latency.cpp)
 target_include_directories(inferserve_onnx_benchmark PRIVATE include)
 target_link_libraries(inferserve_onnx_benchmark PRIVATE
@@ -107,8 +121,28 @@ if(BUILD_TESTING)
         INFERSERVE_TEST_PYTHON_REFERENCE_PATH="${CMAKE_CURRENT_SOURCE_DIR}/tests/data/identity_python_reference.txt"
     )
 
+    add_executable(inferserve_load_generator_tests
+        tests/load_generator_closed_loop_test.cpp
+        tests/load_generator_csv_export_test.cpp
+        tests/load_generator_dispatch_lag_test.cpp
+        tests/load_generator_open_loop_test.cpp
+        tests/load_generator_traffic_pattern_test.cpp
+        src/load_generator/closed_loop_executor.cpp
+        src/load_generator/csv_export.cpp
+        src/load_generator/dispatch_lag.cpp
+        src/load_generator/open_loop_executor.cpp
+        src/load_generator/traffic_pattern.cpp
+    )
+    target_include_directories(inferserve_load_generator_tests PRIVATE src/load_generator)
+    target_link_libraries(inferserve_load_generator_tests PRIVATE
+        GTest::gtest_main
+        inferserve_warnings
+        inferserve_sanitizers
+    )
+
     include(GoogleTest)
     gtest_discover_tests(inferserve_tests)
+    gtest_discover_tests(inferserve_load_generator_tests)
 endif()
 
 if(INFERSERVE_ENABLE_ASAN OR INFERSERVE_ENABLE_TSAN)
