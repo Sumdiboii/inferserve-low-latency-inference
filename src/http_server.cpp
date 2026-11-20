@@ -23,6 +23,7 @@ namespace inferserve {
 namespace {
 
 constexpr std::size_t kMaxRequestHeaderSize = 16 * 1024;
+constexpr std::size_t kClientWorkerCount = 4;
 
 void skip_whitespace(std::string_view text, std::size_t& position)
 {
@@ -311,42 +312,79 @@ HttpServer::~HttpServer()
 
 void HttpServer::run(const volatile std::sig_atomic_t* shutdown_requested)
 {
-    while (!stopping_.load()) {
-        if (shutdown_requested != nullptr && *shutdown_requested != 0) {
-            stop();
-            return;
+    std::vector<std::thread> client_workers;
+    client_workers.reserve(kClientWorkerCount);
+    try {
+        for (std::size_t index = 0; index < kClientWorkerCount; ++index) {
+            client_workers.emplace_back([this, shutdown_requested] {
+                while (std::optional<int> client = clients_.pop()) {
+                    handle_client(*client, admission_, next_request_id_, stopping_, shutdown_requested);
+                    ::close(*client);
+                }
+            });
         }
+    } catch (...) {
+        stop();
+        clients_.shutdown();
+        for (std::thread& worker : client_workers) {
+            worker.join();
+        }
+        throw;
+    }
 
-        pollfd listener{socket_, POLLIN, 0};
-        const int ready = ::poll(&listener, 1, 100);
-        if (ready < 0) {
-            if (errno == EINTR) {
+    try {
+        while (!stopping_.load()) {
+            if (shutdown_requested != nullptr && *shutdown_requested != 0) {
+                stop();
+                break;
+            }
+
+            pollfd listener{socket_, POLLIN, 0};
+            const int ready = ::poll(&listener, 1, 100);
+            if (ready < 0) {
+                if (errno == EINTR) {
+                    continue;
+                }
+                if (stopping_.load()) {
+                    break;
+                }
+                throw std::runtime_error("HTTP poll failed: " + std::string(std::strerror(errno)));
+            }
+            if (ready == 0) {
                 continue;
             }
             if (stopping_.load()) {
-                return;
+                break;
             }
-            throw std::runtime_error("HTTP poll failed: " + std::string(std::strerror(errno)));
-        }
-        if (ready == 0) {
-            continue;
-        }
-        if (stopping_.load()) {
-            return;
-        }
 
-        const int client = ::accept(socket_, nullptr, nullptr);
-        if (client < 0) {
-            if (errno == EINTR) {
-                continue;
+            const int client = ::accept(socket_, nullptr, nullptr);
+            if (client < 0) {
+                if (errno == EINTR) {
+                    continue;
+                }
+                if (stopping_.load()) {
+                    break;
+                }
+                throw std::runtime_error("HTTP accept failed: " + std::string(std::strerror(errno)));
             }
-            if (stopping_.load()) {
-                return;
+
+            if (!clients_.try_push(client)) {
+                send_all(client, response(503, "Service Unavailable", "{\"error\":\"server is busy\"}"));
+                ::close(client);
             }
-            throw std::runtime_error("HTTP accept failed: " + std::string(std::strerror(errno)));
         }
-        handle_client(client, admission_, next_request_id_, stopping_, shutdown_requested);
-        ::close(client);
+    } catch (...) {
+        stop();
+        clients_.shutdown();
+        for (std::thread& worker : client_workers) {
+            worker.join();
+        }
+        throw;
+    }
+
+    clients_.shutdown();
+    for (std::thread& worker : client_workers) {
+        worker.join();
     }
 }
 

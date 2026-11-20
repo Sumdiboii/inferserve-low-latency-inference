@@ -1,9 +1,13 @@
 #pragma once
 
 #include <atomic>
+#include <cstddef>
 #include <csignal>
 #include <cstdint>
+#include <thread>
+#include <vector>
 
+#include <inferserve/bounded_queue.hpp>
 #include <inferserve/request_admission.hpp>
 
 namespace inferserve {
@@ -24,6 +28,7 @@ private:
     int socket_ = -1;
     std::uint16_t port_ = 0;
     RequestAdmission& admission_;
+    BoundedQueue<int> clients_{64};
     std::atomic<std::uint64_t> next_request_id_{1};
     std::atomic<bool> stopping_{false};
 };

@@ -19,6 +19,7 @@
 
 #include <arpa/inet.h>
 #include <netinet/in.h>
+#include <poll.h>
 #include <pthread.h>
 #include <sys/socket.h>
 #include <unistd.h>
@@ -125,6 +126,85 @@ TEST(HttpServer, RegistersHealthAndInferenceEndpoints)
     EXPECT_EQ(queued.input, (inferserve::Data{1.5F, -2.0F, 3.0F}));
     EXPECT_TRUE(queued.enqueued.has_value());
     EXPECT_FALSE(rejection_was_queued);
+}
+
+TEST(HttpServer, StalledClientDoesNotBlockFollowingClient)
+{
+    inferserve::RequestAdmission admission(2);
+    inferserve::HttpServer server(admission, 0);
+    std::thread server_thread([&server] { server.run(); });
+
+    const int stalled_client = ::socket(AF_INET, SOCK_STREAM, 0);
+    if (stalled_client < 0) {
+        server.stop();
+        server_thread.join();
+        FAIL() << "could not create stalled client socket";
+        return;
+    }
+
+    sockaddr_in address{};
+    address.sin_family = AF_INET;
+    address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    address.sin_port = htons(server.port());
+    if (::connect(stalled_client, reinterpret_cast<const sockaddr*>(&address), sizeof(address)) < 0) {
+        ::close(stalled_client);
+        server.stop();
+        server_thread.join();
+        FAIL() << "could not connect stalled client";
+        return;
+    }
+
+    const std::string partial_request = "GET /health HTTP/1.1\r\nHost: localhost\r\n";
+    if (::send(stalled_client, partial_request.data(), partial_request.size(), 0) !=
+        static_cast<ssize_t>(partial_request.size())) {
+        ::close(stalled_client);
+        server.stop();
+        server_thread.join();
+        FAIL() << "could not send partial request";
+        return;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+    const int valid_client = ::socket(AF_INET, SOCK_STREAM, 0);
+    if (valid_client < 0) {
+        server.stop();
+        ::close(stalled_client);
+        server_thread.join();
+        FAIL() << "could not create valid client socket";
+        return;
+    }
+    if (::connect(valid_client, reinterpret_cast<const sockaddr*>(&address), sizeof(address)) < 0) {
+        ::close(valid_client);
+        server.stop();
+        ::close(stalled_client);
+        server_thread.join();
+        FAIL() << "could not connect valid client";
+        return;
+    }
+
+    const std::string health_request = "GET /health HTTP/1.1\r\nHost: localhost\r\n\r\n";
+    const ssize_t sent = ::send(valid_client, health_request.data(), health_request.size(), 0);
+    pollfd response_ready{valid_client, POLLIN, 0};
+    const int ready = sent == static_cast<ssize_t>(health_request.size())
+        ? ::poll(&response_ready, 1, 1000)
+        : -1;
+    std::string response;
+    if (ready > 0) {
+        char buffer[512];
+        ssize_t received = 0;
+        while ((received = ::recv(valid_client, buffer, sizeof(buffer), 0)) > 0) {
+            response.append(buffer, static_cast<std::size_t>(received));
+        }
+    }
+
+    ::close(valid_client);
+    server.stop();
+    ::close(stalled_client);
+    server_thread.join();
+
+    EXPECT_EQ(sent, static_cast<ssize_t>(health_request.size()));
+    EXPECT_GT(ready, 0);
+    EXPECT_NE(response.find("HTTP/1.1 200 OK"), std::string::npos);
 }
 
 TEST(HttpServer, EndToEndInferenceRunsThroughOnnxBackend)
