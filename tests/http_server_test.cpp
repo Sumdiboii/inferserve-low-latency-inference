@@ -145,6 +145,22 @@ TEST(HttpServer, RejectsRequestBodyLargerThanOneMiB)
     EXPECT_NE(response.find("HTTP/1.1 413 Payload Too Large"), std::string::npos);
 }
 
+TEST(HttpServer, ReportsAdmissionShutdownSeparatelyFromQueueSaturation)
+{
+    inferserve::RequestAdmission admission(1);
+    admission.shutdown();
+    inferserve::HttpServer server(admission, 0);
+    std::thread server_thread([&server] { server.run(); });
+
+    const std::string response = post_infer(server.port(), "{\"input\":[1.5,-2,3]}");
+    server.stop();
+    server_thread.join();
+
+    EXPECT_NE(response.find("HTTP/1.1 503 Service Unavailable"), std::string::npos);
+    EXPECT_NE(response.find("server is shutting down"), std::string::npos);
+    EXPECT_EQ(response.find("request was not accepted"), std::string::npos);
+}
+
 TEST(HttpServer, StalledClientDoesNotBlockFollowingClient)
 {
     inferserve::RequestAdmission admission(2);

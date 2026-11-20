@@ -23,10 +23,14 @@ public:
         }
 
         request.enqueued = MonotonicClock{}.now();
-        if (!queue_.try_push(std::move(request))) {
+        const auto push_result = queue_.try_push_result(std::move(request));
+        if (push_result != BoundedQueue<Request>::PushResult::Pushed) {
             request.enqueued.reset();
-            request.complete(Response(request.id, Status::QueueFull));
-            return Status::QueueFull;
+            const Status rejection_status = push_result == BoundedQueue<Request>::PushResult::Full
+                ? Status::QueueFull
+                : Status::ShuttingDown;
+            request.complete(Response(request.id, rejection_status));
+            return rejection_status;
         }
 
         return Status::Success;

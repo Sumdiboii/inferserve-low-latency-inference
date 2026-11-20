@@ -586,8 +586,8 @@ TEST(Batcher, StopShutsDownWaitingBatcherThread)
 
     Request request(RequestId(4), Data{1.0F});
     std::future<Response> future = request.get_future();
-    EXPECT_EQ(admission.admit(std::move(request)), Status::QueueFull);
-    EXPECT_EQ(future.get().status, Status::QueueFull);
+    EXPECT_EQ(admission.admit(std::move(request)), Status::ShuttingDown);
+    EXPECT_EQ(future.get().status, Status::ShuttingDown);
 }
 
 TEST(Batcher, DispatchesPartialBatchAfterMaximumDelay)
@@ -1271,6 +1271,22 @@ TEST(RequestAdmission, RejectsFullQueueWithoutRemovingExistingRequest)
     EXPECT_EQ(queued->id, RequestId(19));
     queued->complete(Response(queued->id, Status::Success));
     EXPECT_EQ(first_future.get().status, Status::Success);
+}
+
+TEST(RequestAdmission, DistinguishesShutdownFromQueueFull)
+{
+    RequestAdmission full_admission(0);
+    Request full_request(RequestId(23), Data{1.0F});
+    std::future<Response> full_future = full_request.get_future();
+    EXPECT_EQ(full_admission.admit(std::move(full_request)), Status::QueueFull);
+    EXPECT_EQ(full_future.get().status, Status::QueueFull);
+
+    RequestAdmission stopped_admission(1);
+    stopped_admission.shutdown();
+    Request stopped_request(RequestId(24), Data{1.0F});
+    std::future<Response> stopped_future = stopped_request.get_future();
+    EXPECT_EQ(stopped_admission.admit(std::move(stopped_request)), Status::ShuttingDown);
+    EXPECT_EQ(stopped_future.get().status, Status::ShuttingDown);
 }
 
 TEST(RequestAdmission, AcceptsRequestAfterCapacityBecomesAvailable)

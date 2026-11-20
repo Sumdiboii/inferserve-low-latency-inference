@@ -277,6 +277,8 @@ void handle_client(int client,
             send_all(client, response(202, "Accepted", "{\"request_id\":" + std::to_string(request_id) + "}"));
         } else if (status == Status::InvalidInput) {
             send_all(client, response(400, "Bad Request", "{\"error\":\"invalid inference input\"}"));
+        } else if (status == Status::ShuttingDown) {
+            send_all(client, response(503, "Service Unavailable", "{\"error\":\"server is shutting down\"}"));
         } else {
             send_all(client, response(503, "Service Unavailable", "{\"error\":\"request was not accepted\"}"));
         }
