@@ -2,6 +2,7 @@
 #include "open_loop_executor.hpp"
 #include "csv_export.hpp"
 #include "dispatch_lag.hpp"
+#include "http_transport.hpp"
 #include "traffic_pattern.hpp"
 
 #include <charconv>
@@ -31,26 +32,44 @@ bool parse_rate(std::string_view text, double& value)
     return error == std::errc{} && end == text.data() + text.size();
 }
 
-bool parse_csv_output_option(int argc, char* argv[], int positional_argc, std::string_view& output_path)
+struct Options {
+    std::string_view csv_output_path;
+    std::string_view http_host;
+    std::uint16_t http_port = 0;
+};
+
+bool parse_options(int argc, char* argv[], int positional_argc, Options& options)
 {
-    if (argc == positional_argc) {
-        output_path = {};
-        return true;
+    int argument = positional_argc;
+    while (argument < argc) {
+        const std::string_view option(argv[argument++]);
+        if (option == "--csv" && argument < argc && options.csv_output_path.empty()) {
+            options.csv_output_path = argv[argument++];
+            if (options.csv_output_path.empty()) {
+                return false;
+            }
+        } else if (option == "--http" && argument + 1 < argc && options.http_host.empty()) {
+            options.http_host = argv[argument++];
+            unsigned int port = 0;
+            if (options.http_host.empty() || !parse_integer(std::string_view(argv[argument++]), port) ||
+                port == 0 || port > 65535) {
+                return false;
+            }
+            options.http_port = static_cast<std::uint16_t>(port);
+        } else {
+            return false;
+        }
     }
-    if (argc == positional_argc + 2 && std::string_view(argv[positional_argc]) == "--csv") {
-        output_path = argv[positional_argc + 1];
-        return !output_path.empty();
-    }
-    return false;
+    return true;
 }
 
 void print_usage()
 {
     std::cerr << "Usage:\n"
-                 "  inferserve_load_generator fixed-rate <count> <rate-per-second> [--csv <output-file>]\n"
-                 "  inferserve_load_generator burst <count> [--csv <output-file>]\n"
-                 "  inferserve_load_generator poisson <count> <rate-per-second> <seed> [--csv <output-file>]\n"
-                 "  inferserve_load_generator closed-loop <count> [--csv <output-file>]\n";
+                 "  inferserve_load_generator fixed-rate <count> <rate-per-second> [--http <host> <port>] [--csv <file>]\n"
+                 "  inferserve_load_generator burst <count> [--http <host> <port>] [--csv <file>]\n"
+                 "  inferserve_load_generator poisson <count> <rate-per-second> <seed> [--http <host> <port>] [--csv <file>]\n"
+                 "  inferserve_load_generator closed-loop <count> [--http <host> <port>] [--csv <file>]\n";
 }
 
 }  // namespace
@@ -71,29 +90,29 @@ int main(int argc, char* argv[])
     try {
         std::vector<double> arrivals;
         const std::string_view pattern(argv[1]);
-        std::string_view csv_output_path;
+        Options options;
         std::cout << std::fixed << std::setprecision(3);
         std::mutex output_mutex;
-        const auto simulate_request = [&output_mutex, closed_loop = pattern == "closed-loop"](
-                                          std::size_t index, double scheduled_seconds) {
-            const std::lock_guard lock(output_mutex);
-            if (closed_loop) {
-                std::cout << "closed-loop simulated request ";
-            } else {
-                std::cout << "simulated request ";
+        const auto execute_request = [&options, &output_mutex, pattern = std::string(pattern)](
+                                         std::size_t index, double scheduled_seconds) {
+            if (!options.http_host.empty()) {
+                return inferserve::load_generator::send_infer_request(options.http_host, options.http_port);
             }
-            std::cout << index << " scheduled at " << scheduled_seconds << " seconds\n";
+            const std::lock_guard lock(output_mutex);
+            std::cout << (pattern == "closed-loop" ? "closed-loop simulated request " : "simulated request ")
+                      << index << " scheduled at " << scheduled_seconds << " seconds\n";
+            return inferserve::load_generator::RequestResult{};
         };
         std::vector<inferserve::load_generator::RequestTimestamps> records;
 
         if (pattern == "closed-loop") {
-            if (!parse_csv_output_option(argc, argv, 3, csv_output_path)) {
+            if (!parse_options(argc, argv, 3, options)) {
                 print_usage();
                 return 1;
             }
-            records = inferserve::load_generator::execute_closed_loop(count, simulate_request);
+            records = inferserve::load_generator::execute_closed_loop_with_results(count, execute_request);
         } else if (pattern == "fixed-rate") {
-            if (!parse_csv_output_option(argc, argv, 4, csv_output_path)) {
+            if (!parse_options(argc, argv, 4, options)) {
                 print_usage();
                 return 1;
             }
@@ -104,13 +123,13 @@ int main(int argc, char* argv[])
             }
             arrivals = inferserve::load_generator::fixed_rate_arrivals(count, rate);
         } else if (pattern == "burst") {
-            if (!parse_csv_output_option(argc, argv, 3, csv_output_path)) {
+            if (!parse_options(argc, argv, 3, options)) {
                 print_usage();
                 return 1;
             }
             arrivals = inferserve::load_generator::burst_arrivals(count);
         } else if (pattern == "poisson") {
-            if (!parse_csv_output_option(argc, argv, 5, csv_output_path)) {
+            if (!parse_options(argc, argv, 5, options)) {
                 print_usage();
                 return 1;
             }
@@ -128,11 +147,24 @@ int main(int argc, char* argv[])
         }
 
         if (pattern != "closed-loop") {
-            records = inferserve::load_generator::execute_open_loop(arrivals, simulate_request);
+            records = inferserve::load_generator::execute_open_loop_with_results(arrivals, execute_request);
         }
 
-        if (!csv_output_path.empty()) {
-            inferserve::load_generator::export_records_csv(std::string(csv_output_path), records);
+        bool has_failed_requests = false;
+        for (const auto& record : records) {
+            if (record.result.http_status != 0) {
+                std::lock_guard lock(output_mutex);
+                std::cout << "request " << record.request_index << " HTTP " << record.result.http_status << '\n';
+            }
+            if (!record.result.success) {
+                has_failed_requests = true;
+                std::lock_guard lock(output_mutex);
+                std::cerr << "request " << record.request_index << " failed: " << record.result.error << '\n';
+            }
+        }
+
+        if (!options.csv_output_path.empty()) {
+            inferserve::load_generator::export_records_csv(std::string(options.csv_output_path), records);
         }
         const auto dispatch_lags = inferserve::load_generator::calculate_dispatch_lags(records);
         for (const auto& dispatch_lag : dispatch_lags) {
@@ -143,6 +175,9 @@ int main(int argc, char* argv[])
             const auto statistics = inferserve::load_generator::summarize_dispatch_lags(dispatch_lags);
             std::cout << "dispatch lag statistics (ms): mean=" << statistics.mean_ms << " p50=" << statistics.p50_ms
                       << " p95=" << statistics.p95_ms << '\n';
+        }
+        if (has_failed_requests) {
+            return 2;
         }
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';

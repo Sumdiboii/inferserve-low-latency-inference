@@ -22,9 +22,9 @@ struct ScheduledRequest {
 
 }  // namespace
 
-std::vector<RequestTimestamps> execute_open_loop(
+std::vector<RequestTimestamps> execute_open_loop_with_results(
     const std::vector<double>& scheduled_arrivals_seconds,
-    const std::function<void(std::size_t, double)>& execute_request)
+    const std::function<RequestResult(std::size_t, double)>& execute_request)
 {
     using Clock = std::chrono::steady_clock;
     const auto schedule_start = Clock::now();
@@ -56,14 +56,17 @@ std::vector<RequestTimestamps> execute_open_loop(
                     }
 
                     const auto actual_send = Clock::now();
+                    RequestResult result;
                     try {
-                        execute_request(request.index, request.scheduled_seconds);
+                        result = execute_request(request.index, request.scheduled_seconds);
                     } catch (...) {
                         callback_errors[request.index] = std::current_exception();
+                        result = RequestResult{false, 0, "request callback failed"};
                     }
                     const auto completion = Clock::now();
                     records[request.index] = RequestTimestamps{
-                        request.index, schedule_start, request.scheduled_arrival, actual_send, completion};
+                        request.index, schedule_start, request.scheduled_arrival, actual_send, completion,
+                        std::move(result)};
                 }
             });
         }
@@ -115,6 +118,16 @@ std::vector<RequestTimestamps> execute_open_loop(
         }
     }
     return records;
+}
+
+std::vector<RequestTimestamps> execute_open_loop(
+    const std::vector<double>& scheduled_arrivals_seconds,
+    const std::function<void(std::size_t, double)>& execute_request)
+{
+    return execute_open_loop_with_results(scheduled_arrivals_seconds, [&](std::size_t index, double scheduled_time) {
+        execute_request(index, scheduled_time);
+        return RequestResult{};
+    });
 }
 
 }  // namespace inferserve::load_generator
