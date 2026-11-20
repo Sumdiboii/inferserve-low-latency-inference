@@ -194,6 +194,9 @@ void send_all(int socket, std::string_view data)
             }
             return;
         }
+        if (sent == 0) {
+            return;
+        }
         data.remove_prefix(static_cast<std::size_t>(sent));
     }
 }
