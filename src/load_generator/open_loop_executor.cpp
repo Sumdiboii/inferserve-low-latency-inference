@@ -21,12 +21,14 @@ std::vector<RequestTimestamps> execute_open_loop(
         const auto offset = std::chrono::duration_cast<Clock::duration>(std::chrono::duration<double>(scheduled_seconds));
         const auto scheduled_arrival = schedule_start + offset;
         std::this_thread::sleep_until(scheduled_arrival);
-        executions.push_back(std::async(std::launch::async, [&execute_request, index, scheduled_seconds, scheduled_arrival] {
-            const auto actual_send = Clock::now();
-            execute_request(index, scheduled_seconds);
-            const auto completion = Clock::now();
-            return RequestTimestamps{index, scheduled_arrival, actual_send, completion};
-        }));
+        executions.push_back(std::async(std::launch::async,
+                                        [&execute_request, index, scheduled_seconds, schedule_start, scheduled_arrival] {
+                                            const auto actual_send = Clock::now();
+                                            execute_request(index, scheduled_seconds);
+                                            const auto completion = Clock::now();
+                                            return RequestTimestamps{
+                                                index, schedule_start, scheduled_arrival, actual_send, completion};
+                                        }));
     }
 
     std::vector<RequestTimestamps> records;

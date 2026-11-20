@@ -17,10 +17,10 @@ TEST(DispatchLag, CalculatesPerRequestLagAndNearestRankStatistics)
     using Clock = std::chrono::steady_clock;
     const auto origin = Clock::time_point{};
     const std::vector<RequestTimestamps> records{
-        {42, origin, origin + 40ms, origin + 2h},
-        {7, origin + 1s, origin + 1s + 10ms, origin + 3h},
-        {88, origin + 2s, origin + 2s + 30ms, origin + 4h},
-        {5, origin + 3s, origin + 3s + 20ms, origin + 5h},
+        {42, origin, origin, origin + 40ms, origin + 2h},
+        {7, origin, origin + 1s, origin + 1s + 10ms, origin + 3h},
+        {88, origin, origin + 2s, origin + 2s + 30ms, origin + 4h},
+        {5, origin, origin + 3s, origin + 3s + 20ms, origin + 5h},
     };
 
     const auto dispatch_lags = calculate_dispatch_lags(records);

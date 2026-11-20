@@ -1,4 +1,5 @@
 #include "open_loop_executor.hpp"
+#include "csv_export.hpp"
 #include "dispatch_lag.hpp"
 #include "traffic_pattern.hpp"
 
@@ -9,6 +10,7 @@
 #include <iomanip>
 #include <iostream>
 #include <mutex>
+#include <string>
 #include <string_view>
 #include <system_error>
 #include <vector>
@@ -28,12 +30,25 @@ bool parse_rate(std::string_view text, double& value)
     return error == std::errc{} && end == text.data() + text.size();
 }
 
+bool parse_csv_output_option(int argc, char* argv[], int positional_argc, std::string_view& output_path)
+{
+    if (argc == positional_argc) {
+        output_path = {};
+        return true;
+    }
+    if (argc == positional_argc + 2 && std::string_view(argv[positional_argc]) == "--csv") {
+        output_path = argv[positional_argc + 1];
+        return !output_path.empty();
+    }
+    return false;
+}
+
 void print_usage()
 {
     std::cerr << "Usage:\n"
-                 "  inferserve_load_generator fixed-rate <count> <rate-per-second>\n"
-                 "  inferserve_load_generator burst <count>\n"
-                 "  inferserve_load_generator poisson <count> <rate-per-second> <seed>\n";
+                 "  inferserve_load_generator fixed-rate <count> <rate-per-second> [--csv <output-file>]\n"
+                 "  inferserve_load_generator burst <count> [--csv <output-file>]\n"
+                 "  inferserve_load_generator poisson <count> <rate-per-second> <seed> [--csv <output-file>]\n";
 }
 
 }  // namespace
@@ -54,16 +69,29 @@ int main(int argc, char* argv[])
     try {
         std::vector<double> arrivals;
         const std::string_view pattern(argv[1]);
-        if (pattern == "fixed-rate" && argc == 4) {
+        std::string_view csv_output_path;
+        if (pattern == "fixed-rate") {
+            if (!parse_csv_output_option(argc, argv, 4, csv_output_path)) {
+                print_usage();
+                return 1;
+            }
             double rate = 0.0;
             if (!parse_rate(std::string_view(argv[3]), rate)) {
                 std::cerr << "rate-per-second must be a number\n";
                 return 1;
             }
             arrivals = inferserve::load_generator::fixed_rate_arrivals(count, rate);
-        } else if (pattern == "burst" && argc == 3) {
+        } else if (pattern == "burst") {
+            if (!parse_csv_output_option(argc, argv, 3, csv_output_path)) {
+                print_usage();
+                return 1;
+            }
             arrivals = inferserve::load_generator::burst_arrivals(count);
-        } else if (pattern == "poisson" && argc == 5) {
+        } else if (pattern == "poisson") {
+            if (!parse_csv_output_option(argc, argv, 5, csv_output_path)) {
+                print_usage();
+                return 1;
+            }
             double rate = 0.0;
             std::uint64_t seed = 0;
             if (!parse_rate(std::string_view(argv[3]), rate) ||
@@ -85,6 +113,9 @@ int main(int argc, char* argv[])
                 const std::lock_guard lock(output_mutex);
                 std::cout << "simulated request " << index << " scheduled at " << scheduled_seconds << " seconds\n";
             });
+        if (!csv_output_path.empty()) {
+            inferserve::load_generator::export_records_csv(std::string(csv_output_path), records);
+        }
         const auto dispatch_lags = inferserve::load_generator::calculate_dispatch_lags(records);
         for (const auto& dispatch_lag : dispatch_lags) {
             std::cout << "request " << dispatch_lag.request_index << " dispatch lag: " << dispatch_lag.milliseconds
