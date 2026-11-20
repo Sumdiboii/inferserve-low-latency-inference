@@ -1,4 +1,5 @@
 #include "open_loop_executor.hpp"
+#include "dispatch_lag.hpp"
 #include "traffic_pattern.hpp"
 
 #include <charconv>
@@ -76,14 +77,24 @@ int main(int argc, char* argv[])
             return 1;
         }
 
-        std::cout << std::fixed << std::setprecision(9);
+        std::cout << std::fixed << std::setprecision(3);
         std::mutex output_mutex;
-        static_cast<void>(inferserve::load_generator::execute_open_loop(
+        const auto records = inferserve::load_generator::execute_open_loop(
             arrivals,
             [&output_mutex](std::size_t index, double scheduled_seconds) {
                 const std::lock_guard lock(output_mutex);
                 std::cout << "simulated request " << index << " scheduled at " << scheduled_seconds << " seconds\n";
-            }));
+            });
+        const auto dispatch_lags = inferserve::load_generator::calculate_dispatch_lags(records);
+        for (const auto& dispatch_lag : dispatch_lags) {
+            std::cout << "request " << dispatch_lag.request_index << " dispatch lag: " << dispatch_lag.milliseconds
+                      << " ms\n";
+        }
+        if (!dispatch_lags.empty()) {
+            const auto statistics = inferserve::load_generator::summarize_dispatch_lags(dispatch_lags);
+            std::cout << "dispatch lag statistics (ms): mean=" << statistics.mean_ms << " p50=" << statistics.p50_ms
+                      << " p95=" << statistics.p95_ms << '\n';
+        }
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';
         return 1;
