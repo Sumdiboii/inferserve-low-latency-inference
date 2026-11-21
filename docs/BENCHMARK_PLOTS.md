@@ -9,6 +9,16 @@ python3 scripts/plot_benchmark_results.py \
   --output-dir plots
 ```
 
+When `--csv results.csv` is supplied to the load generator, it also writes
+`results.csv.metadata.json` with the run configuration and available local
+build/runtime information. It includes pattern, open/closed-loop mode, transport,
+request count, actual execution duration, scheduled duration (open-loop), target
+rate and Poisson seed where applicable, closed-loop concurrency, HTTP destination,
+UTC start time, compiler, C++ standard, and OS. `backend_identity` and
+`server_configuration` are `null` because the client cannot reliably discover
+them; null rate, seed, concurrency, or destination values mean not applicable or
+not configured for that run.
+
 The script uses only the Python standard library. It writes `latency_percentiles.svg`
 (p50, p95, and p99 scheduled-arrival-to-completion latency in milliseconds) and
 `throughput.svg` (dispatched requests completed by the generator per second). The

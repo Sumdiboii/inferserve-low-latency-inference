@@ -76,6 +76,7 @@ if(INFERSERVE_BUILD_SERVER)
 endif()
 
 add_executable(inferserve_load_generator
+    src/load_generator/benchmark_metadata.cpp
     src/load_generator/closed_loop_executor.cpp
     src/load_generator/csv_export.cpp
     src/load_generator/dispatch_lag.cpp
@@ -130,6 +131,7 @@ if(BUILD_TESTING)
     endif()
 
     add_executable(inferserve_load_generator_tests
+        tests/load_generator_benchmark_metadata_test.cpp
         tests/load_generator_closed_loop_test.cpp
         tests/load_generator_csv_export_test.cpp
         tests/load_generator_dispatch_lag_test.cpp
@@ -137,6 +139,7 @@ if(BUILD_TESTING)
         tests/load_generator_open_loop_test.cpp
         tests/load_generator_performance_stats_test.cpp
         tests/load_generator_traffic_pattern_test.cpp
+        src/load_generator/benchmark_metadata.cpp
         src/load_generator/closed_loop_executor.cpp
         src/load_generator/csv_export.cpp
         src/load_generator/dispatch_lag.cpp
