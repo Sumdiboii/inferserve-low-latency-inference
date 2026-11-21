@@ -105,7 +105,7 @@ std::vector<RequestTimestamps> execute_open_loop_with_results(
                 const auto dispatch_attempt = Clock::now();
                 records[index] = RequestTimestamps{
                     index, schedule_start, scheduled_arrival, dispatch_attempt, dispatch_attempt,
-                    RequestResult{false, 0, "request not dispatched: pending queue is full"}};
+                    RequestResult{false, 0, "request not dispatched: pending queue is full", false}};
             }
         }
     } catch (...) {

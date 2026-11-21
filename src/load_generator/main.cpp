@@ -3,6 +3,7 @@
 #include "csv_export.hpp"
 #include "dispatch_lag.hpp"
 #include "http_transport.hpp"
+#include "performance_stats.hpp"
 #include "traffic_pattern.hpp"
 
 #include <charconv>
@@ -12,6 +13,7 @@
 #include <iomanip>
 #include <iostream>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <system_error>
@@ -70,6 +72,16 @@ void print_usage()
                  "  inferserve_load_generator burst <count> [--http <host> <port>] [--csv <file>]\n"
                  "  inferserve_load_generator poisson <count> <rate-per-second> <seed> [--http <host> <port>] [--csv <file>]\n"
                  "  inferserve_load_generator closed-loop <count> [--http <host> <port>] [--csv <file>]\n";
+}
+
+void print_rate(std::string_view label, const std::optional<double>& rate)
+{
+    std::cout << label << ": ";
+    if (rate.has_value()) {
+        std::cout << *rate << " requests/s\n";
+    } else {
+        std::cout << "n/a\n";
+    }
 }
 
 }  // namespace
@@ -176,6 +188,23 @@ int main(int argc, char* argv[])
             std::cout << "dispatch lag statistics (ms): mean=" << statistics.mean_ms << " p50=" << statistics.p50_ms
                       << " p95=" << statistics.p95_ms << '\n';
         }
+
+        const auto performance = inferserve::load_generator::calculate_performance_statistics(records);
+        std::cout << "performance statistics:\n";
+        if (performance.latency_ms.has_value()) {
+            std::cout << "request latency from scheduled arrival (ms): p50=" << performance.latency_ms->p50_ms
+                      << " p95=" << performance.latency_ms->p95_ms << " p99=" << performance.latency_ms->p99_ms
+                      << " samples=" << performance.latency_ms->sample_count << '\n';
+        } else {
+            std::cout << "request latency from scheduled arrival (ms): n/a\n";
+        }
+        print_rate("throughput (completed dispatched requests)", performance.throughput_requests_per_second);
+        print_rate("offered rate (scheduled requests)", performance.offered_requests_per_second);
+        print_rate("HTTP acknowledgement rate (successful 2xx; 202 means admitted, not inference complete)",
+                   performance.http_acknowledgements_per_second);
+        std::cout << "request failures: failed=" << performance.failures.failed
+                  << " rejected=" << performance.failures.rejected
+                  << " undispatched=" << performance.failures.undispatched << '\n';
         if (has_failed_requests) {
             return 2;
         }
