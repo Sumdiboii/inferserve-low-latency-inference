@@ -32,5 +32,24 @@ is marked incomplete when fewer than three runs succeed.
 Use `--load-generator` or `--output-dir` to override the executable or output
 location for one invocation.
 
+## HTTP server backends
+
+The HTTP server uses the Synthetic backend by default:
+
+```sh
+build/debug/inferserve [port]
+```
+
+To use the existing ONNX Runtime CPU backend, select it and provide an ONNX
+model:
+
+```sh
+build/debug/inferserve --backend onnx --model tests/data/identity_dynamic_batch_2.onnx [port]
+```
+
+The ONNX backend requires an existing float32 model with one input and one
+output. The model's leading batch dimension may be fixed or dynamic. A missing
+model or invalid model shape fails startup through the existing backend loader.
+
 The command reports every run as succeeded or failed and exits non-zero if any
 run fails or omits its CSV or metadata sidecar.

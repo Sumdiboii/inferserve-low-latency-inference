@@ -1,4 +1,6 @@
 #include <inferserve/server_runtime.hpp>
+#include <inferserve/onnx_runtime_backend.hpp>
+#include <inferserve/server_options.hpp>
 #include <inferserve/synthetic_backend.hpp>
 
 #include <charconv>
@@ -21,27 +23,38 @@ void request_shutdown(int)
 
 static_assert(__cplusplus >= 202002L);
 
+namespace {
+
+void print_usage()
+{
+    std::cerr << "Usage:\n"
+                 "  inferserve [port] [--backend synthetic|onnx] [--model <path>]\n"
+                 "  inferserve --backend onnx --model <path> [port]\n";
+}
+
+}  // namespace
+
 int main(int argc, char* argv[])
 {
-    std::uint16_t port = 8080;
-    if (argc > 2) {
-        std::cerr << "Usage: inferserve [port]\n";
+    inferserve::ServerOptions options;
+    std::string error;
+    if (!inferserve::parse_server_options(argc, argv, options, error)) {
+        std::cerr << error << '\n';
+        print_usage();
         return 1;
     }
-    if (argc == 2) {
-        const std::string_view argument(argv[1]);
-        unsigned int parsed_port = 0;
-        const auto [end, error] = std::from_chars(argument.data(), argument.data() + argument.size(), parsed_port);
-        if (error != std::errc{} || end != argument.data() + argument.size() || parsed_port > 65535) {
-            std::cerr << "Port must be an integer between 0 and 65535\n";
-            return 1;
-        }
-        port = static_cast<std::uint16_t>(parsed_port);
+    if (options.help) {
+        print_usage();
+        return 0;
     }
 
     try {
-        inferserve::SyntheticBackend backend;
-        inferserve::ServerRuntime server(backend, port);
+        inferserve::SyntheticBackend synthetic_backend;
+        inferserve::OnnxRuntimeBackend onnx_backend(options.model_path);
+        inferserve::Backend& backend = options.backend == inferserve::ServerBackend::OnnxRuntime
+                                           ? static_cast<inferserve::Backend&>(onnx_backend)
+                                           : static_cast<inferserve::Backend&>(synthetic_backend);
+        inferserve::ServerRuntime server(backend, options.port);
         if (std::signal(SIGINT, request_shutdown) == SIG_ERR ||
             std::signal(SIGTERM, request_shutdown) == SIG_ERR) {
             std::cerr << "Failed to register shutdown signal handlers\n";
