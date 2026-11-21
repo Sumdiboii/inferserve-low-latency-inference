@@ -34,6 +34,7 @@ enum class Status {
     Success,
     InvalidInput,
     QueueFull,
+    ShuttingDown,
     BackendError,
     InternalError,
 };

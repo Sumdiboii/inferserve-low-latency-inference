@@ -1,5 +1,5 @@
-#include <inferserve/http_server.hpp>
-#include <inferserve/request_admission.hpp>
+#include <inferserve/server_runtime.hpp>
+#include <inferserve/synthetic_backend.hpp>
 
 #include <charconv>
 #include <csignal>
@@ -40,8 +40,8 @@ int main(int argc, char* argv[])
     }
 
     try {
-        inferserve::RequestAdmission admission(1024);
-        inferserve::HttpServer server(admission, port);
+        inferserve::SyntheticBackend backend;
+        inferserve::ServerRuntime server(backend, port);
         if (std::signal(SIGINT, request_shutdown) == SIG_ERR ||
             std::signal(SIGTERM, request_shutdown) == SIG_ERR) {
             std::cerr << "Failed to register shutdown signal handlers\n";

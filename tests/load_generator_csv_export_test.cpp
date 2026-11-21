@@ -26,9 +26,24 @@ TEST(CsvExport, WritesStableHeaderValuesAndRequestOrder)
     write_records_csv(output, records);
 
     EXPECT_EQ(output.str(),
-              "request_index,scheduled_arrival_ms,actual_send_ms,completion_ms,dispatch_lag_ms\n"
-              "9,10.000,12.000,15.000,2.000\n"
-              "2,20.000,25.000,30.000,5.000\n");
+              "request_index,scheduled_arrival_ms,actual_send_ms,completion_ms,dispatch_lag_ms,http_status,success,error\n"
+              "9,10.000,12.000,15.000,2.000,,true,\n"
+              "2,20.000,25.000,30.000,5.000,,true,\n");
+}
+
+TEST(CsvExport, IncludesHttpStatusAndEscapesFailureMessage)
+{
+    using Clock = std::chrono::steady_clock;
+    const auto origin = Clock::time_point{};
+    std::vector<RequestTimestamps> records{
+        {0, origin, origin, origin, origin, {false, 503, "HTTP 503: {\"error\":\"busy, retry\"}"}},
+    };
+    std::ostringstream output;
+
+    write_records_csv(output, records);
+
+    EXPECT_NE(output.str().find("0,0.000,0.000,0.000,0.000,503,false,\"HTTP 503: {\"\"error\"\":\"\"busy, retry\"\"}\""),
+              std::string::npos);
 }
 
 }  // namespace

@@ -586,8 +586,8 @@ TEST(Batcher, StopShutsDownWaitingBatcherThread)
 
     Request request(RequestId(4), Data{1.0F});
     std::future<Response> future = request.get_future();
-    EXPECT_EQ(admission.admit(std::move(request)), Status::QueueFull);
-    EXPECT_EQ(future.get().status, Status::QueueFull);
+    EXPECT_EQ(admission.admit(std::move(request)), Status::ShuttingDown);
+    EXPECT_EQ(future.get().status, Status::ShuttingDown);
 }
 
 TEST(Batcher, DispatchesPartialBatchAfterMaximumDelay)
@@ -707,6 +707,38 @@ TEST(Batcher, DeliversBackendResultsToRequestFutures)
     EXPECT_EQ(second_response.id, RequestId(10));
     EXPECT_EQ(second_response.status, Status::Success);
     EXPECT_EQ(second_response.output, Data({3.0F, 4.0F}));
+}
+
+TEST(Batcher, ObserverExceptionDoesNotRepeatCompletionOrStopLaterBatches)
+{
+    RequestAdmission admission(2);
+    TestBackend backend;
+    backend.load();
+    std::size_t observer_calls = 0;
+    Batcher batcher(admission, backend, 1, [&](const Batcher::RequestBatch&) {
+        ++observer_calls;
+        if (observer_calls == 1) {
+            throw std::runtime_error("observer failed");
+        }
+    });
+
+    Request first(RequestId(13), Data{1.0F});
+    Request second(RequestId(14), Data{2.0F});
+    std::future<Response> first_response = first.get_future();
+    std::future<Response> second_response = second.get_future();
+    ASSERT_EQ(admission.admit(std::move(first)), Status::Success);
+    ASSERT_EQ(admission.admit(std::move(second)), Status::Success);
+
+    batcher.start();
+    const bool first_completed = first_response.wait_for(std::chrono::seconds(1)) == std::future_status::ready;
+    const bool second_completed = second_response.wait_for(std::chrono::seconds(1)) == std::future_status::ready;
+    batcher.stop();
+
+    ASSERT_TRUE(first_completed);
+    ASSERT_TRUE(second_completed);
+    EXPECT_EQ(first_response.get().status, Status::Success);
+    EXPECT_EQ(second_response.get().status, Status::Success);
+    EXPECT_EQ(observer_calls, 2U);
 }
 
 TEST(Batcher, RecordsBackendExecutionTimestamps)
@@ -1239,6 +1271,22 @@ TEST(RequestAdmission, RejectsFullQueueWithoutRemovingExistingRequest)
     EXPECT_EQ(queued->id, RequestId(19));
     queued->complete(Response(queued->id, Status::Success));
     EXPECT_EQ(first_future.get().status, Status::Success);
+}
+
+TEST(RequestAdmission, DistinguishesShutdownFromQueueFull)
+{
+    RequestAdmission full_admission(0);
+    Request full_request(RequestId(23), Data{1.0F});
+    std::future<Response> full_future = full_request.get_future();
+    EXPECT_EQ(full_admission.admit(std::move(full_request)), Status::QueueFull);
+    EXPECT_EQ(full_future.get().status, Status::QueueFull);
+
+    RequestAdmission stopped_admission(1);
+    stopped_admission.shutdown();
+    Request stopped_request(RequestId(24), Data{1.0F});
+    std::future<Response> stopped_future = stopped_request.get_future();
+    EXPECT_EQ(stopped_admission.admit(std::move(stopped_request)), Status::ShuttingDown);
+    EXPECT_EQ(stopped_future.get().status, Status::ShuttingDown);
 }
 
 TEST(RequestAdmission, AcceptsRequestAfterCapacityBecomesAvailable)

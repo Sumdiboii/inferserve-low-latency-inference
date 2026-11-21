@@ -8,22 +8,12 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 option(INFERSERVE_ENABLE_ASAN "Enable AddressSanitizer" OFF)
 option(INFERSERVE_ENABLE_TSAN "Enable ThreadSanitizer" OFF)
+option(INFERSERVE_BUILD_SERVER "Build the InferServe server and ONNX-dependent targets" ON)
 set(INFERSERVE_ONNXRUNTIME_ROOT "" CACHE PATH "Root of a locally installed ONNX Runtime CPU package")
 
 if(INFERSERVE_ENABLE_ASAN AND INFERSERVE_ENABLE_TSAN)
     message(FATAL_ERROR "AddressSanitizer and ThreadSanitizer cannot be enabled together")
 endif()
-
-add_executable(inferserve
-    src/main.cpp
-    src/http_server.cpp
-)
-set_target_properties(inferserve PROPERTIES
-    CXX_STANDARD 20
-    CXX_STANDARD_REQUIRED ON
-    CXX_EXTENSIONS OFF
-)
-target_include_directories(inferserve PRIVATE include)
 
 add_library(inferserve_warnings INTERFACE)
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
@@ -39,33 +29,57 @@ else()
     message(FATAL_ERROR "Unsupported compiler for InferServe warning policy: ${CMAKE_CXX_COMPILER_ID}")
 endif()
 
-target_link_libraries(inferserve PRIVATE inferserve_warnings)
-
-if(INFERSERVE_ONNXRUNTIME_ROOT)
-    set(_inferserve_onnxruntime_root "${INFERSERVE_ONNXRUNTIME_ROOT}")
-else()
-    set(_inferserve_onnxruntime_root "${CMAKE_CURRENT_SOURCE_DIR}/third_party/onnxruntime-linux-x64-1.20.1")
-endif()
-find_path(INFERSERVE_ONNXRUNTIME_INCLUDE_DIR NAMES onnxruntime_c_api.h HINTS "${_inferserve_onnxruntime_root}/include" NO_DEFAULT_PATH)
-if(EXISTS "${_inferserve_onnxruntime_root}/lib/libonnxruntime.so.1.20.1")
-    set(INFERSERVE_ONNXRUNTIME_LIBRARY "${_inferserve_onnxruntime_root}/lib/libonnxruntime.so.1.20.1")
-endif()
-if(INFERSERVE_ONNXRUNTIME_INCLUDE_DIR AND INFERSERVE_ONNXRUNTIME_LIBRARY)
-    add_library(inferserve_onnxruntime UNKNOWN IMPORTED)
-    set_target_properties(inferserve_onnxruntime PROPERTIES IMPORTED_LOCATION "${INFERSERVE_ONNXRUNTIME_LIBRARY}" INTERFACE_INCLUDE_DIRECTORIES "${INFERSERVE_ONNXRUNTIME_INCLUDE_DIR}")
-    message(STATUS "Found ONNX Runtime: ${INFERSERVE_ONNXRUNTIME_LIBRARY}")
-else()
-    message(FATAL_ERROR "ONNX Runtime CPU 1.20.1 is required; run scripts/download_onnxruntime.sh or set INFERSERVE_ONNXRUNTIME_ROOT")
-endif()
-target_link_libraries(inferserve PRIVATE inferserve_onnxruntime)
-
 add_library(inferserve_sanitizers INTERFACE)
-target_link_libraries(inferserve PRIVATE inferserve_sanitizers)
+
+if(INFERSERVE_BUILD_SERVER)
+    add_executable(inferserve
+        src/main.cpp
+        src/http_server.cpp
+        src/server_runtime.cpp
+    )
+    set_target_properties(inferserve PROPERTIES
+        CXX_STANDARD 20
+        CXX_STANDARD_REQUIRED ON
+        CXX_EXTENSIONS OFF
+    )
+    target_include_directories(inferserve PRIVATE include)
+    target_link_libraries(inferserve PRIVATE inferserve_warnings inferserve_sanitizers)
+
+    if(INFERSERVE_ONNXRUNTIME_ROOT)
+        set(_inferserve_onnxruntime_root "${INFERSERVE_ONNXRUNTIME_ROOT}")
+    else()
+        set(_inferserve_onnxruntime_root "${CMAKE_CURRENT_SOURCE_DIR}/third_party/onnxruntime-linux-x64-1.20.1")
+    endif()
+    find_path(INFERSERVE_ONNXRUNTIME_INCLUDE_DIR NAMES onnxruntime_c_api.h HINTS "${_inferserve_onnxruntime_root}/include" NO_DEFAULT_PATH)
+    if(EXISTS "${_inferserve_onnxruntime_root}/lib/libonnxruntime.so.1.20.1")
+        set(INFERSERVE_ONNXRUNTIME_LIBRARY "${_inferserve_onnxruntime_root}/lib/libonnxruntime.so.1.20.1")
+    endif()
+    if(INFERSERVE_ONNXRUNTIME_INCLUDE_DIR AND INFERSERVE_ONNXRUNTIME_LIBRARY)
+        add_library(inferserve_onnxruntime UNKNOWN IMPORTED)
+        set_target_properties(inferserve_onnxruntime PROPERTIES IMPORTED_LOCATION "${INFERSERVE_ONNXRUNTIME_LIBRARY}" INTERFACE_INCLUDE_DIRECTORIES "${INFERSERVE_ONNXRUNTIME_INCLUDE_DIR}")
+        message(STATUS "Found ONNX Runtime: ${INFERSERVE_ONNXRUNTIME_LIBRARY}")
+    else()
+        message(FATAL_ERROR "ONNX Runtime CPU 1.20.1 is required when INFERSERVE_BUILD_SERVER is ON; run scripts/download_onnxruntime.sh or set INFERSERVE_ONNXRUNTIME_ROOT")
+    endif()
+    target_link_libraries(inferserve PRIVATE inferserve_onnxruntime)
+
+    add_executable(inferserve_onnx_benchmark benchmarks/onnx_runtime_batch_latency.cpp)
+    target_include_directories(inferserve_onnx_benchmark PRIVATE include)
+    target_link_libraries(inferserve_onnx_benchmark PRIVATE
+        inferserve_warnings
+        inferserve_sanitizers
+        inferserve_onnxruntime
+    )
+    target_compile_definitions(inferserve_onnx_benchmark PRIVATE
+        INFERSERVE_BENCHMARK_DYNAMIC_BATCH_MODEL_PATH="${CMAKE_CURRENT_SOURCE_DIR}/tests/data/identity_dynamic_batch_2.onnx"
+    )
+endif()
 
 add_executable(inferserve_load_generator
     src/load_generator/closed_loop_executor.cpp
     src/load_generator/csv_export.cpp
     src/load_generator/dispatch_lag.cpp
+    src/load_generator/http_transport.cpp
     src/load_generator/main.cpp
     src/load_generator/open_loop_executor.cpp
     src/load_generator/traffic_pattern.cpp
@@ -74,17 +88,6 @@ target_include_directories(inferserve_load_generator PRIVATE src/load_generator)
 target_link_libraries(inferserve_load_generator PRIVATE
     inferserve_warnings
     inferserve_sanitizers
-)
-
-add_executable(inferserve_onnx_benchmark benchmarks/onnx_runtime_batch_latency.cpp)
-target_include_directories(inferserve_onnx_benchmark PRIVATE include)
-target_link_libraries(inferserve_onnx_benchmark PRIVATE
-    inferserve_warnings
-    inferserve_sanitizers
-    inferserve_onnxruntime
-)
-target_compile_definitions(inferserve_onnx_benchmark PRIVATE
-    INFERSERVE_BENCHMARK_DYNAMIC_BATCH_MODEL_PATH="${CMAKE_CURRENT_SOURCE_DIR}/tests/data/identity_dynamic_batch_2.onnx"
 )
 
 include(CTest)
@@ -103,37 +106,44 @@ if(BUILD_TESTING)
     )
     FetchContent_MakeAvailable(googletest)
 
-    add_executable(inferserve_tests
-        tests/smoke_test.cpp
-        tests/http_server_test.cpp
-        src/http_server.cpp
-    )
-    target_include_directories(inferserve_tests PRIVATE include)
-    target_link_libraries(inferserve_tests PRIVATE
-        GTest::gtest_main
-        inferserve_warnings
-        inferserve_sanitizers
-        inferserve_onnxruntime
-    )
-    target_compile_definitions(inferserve_tests PRIVATE
-        INFERSERVE_TEST_MODEL_PATH="${CMAKE_CURRENT_SOURCE_DIR}/tests/data/identity_1x2.onnx"
-        INFERSERVE_TEST_DYNAMIC_BATCH_MODEL_PATH="${CMAKE_CURRENT_SOURCE_DIR}/tests/data/identity_dynamic_batch_2.onnx"
-        INFERSERVE_TEST_PYTHON_REFERENCE_PATH="${CMAKE_CURRENT_SOURCE_DIR}/tests/data/identity_python_reference.txt"
-    )
+    if(INFERSERVE_BUILD_SERVER)
+        add_executable(inferserve_tests
+            tests/smoke_test.cpp
+            tests/http_server_test.cpp
+            src/http_server.cpp
+            src/server_runtime.cpp
+        )
+        target_include_directories(inferserve_tests PRIVATE include)
+        target_link_libraries(inferserve_tests PRIVATE
+            GTest::gtest_main
+            inferserve_warnings
+            inferserve_sanitizers
+            inferserve_onnxruntime
+        )
+        target_compile_definitions(inferserve_tests PRIVATE
+            INFERSERVE_TEST_MODEL_PATH="${CMAKE_CURRENT_SOURCE_DIR}/tests/data/identity_1x2.onnx"
+            INFERSERVE_TEST_DYNAMIC_BATCH_MODEL_PATH="${CMAKE_CURRENT_SOURCE_DIR}/tests/data/identity_dynamic_batch_2.onnx"
+            INFERSERVE_TEST_PYTHON_REFERENCE_PATH="${CMAKE_CURRENT_SOURCE_DIR}/tests/data/identity_python_reference.txt"
+        )
+    endif()
 
     add_executable(inferserve_load_generator_tests
         tests/load_generator_closed_loop_test.cpp
         tests/load_generator_csv_export_test.cpp
         tests/load_generator_dispatch_lag_test.cpp
+        tests/load_generator_http_transport_test.cpp
         tests/load_generator_open_loop_test.cpp
         tests/load_generator_traffic_pattern_test.cpp
         src/load_generator/closed_loop_executor.cpp
         src/load_generator/csv_export.cpp
         src/load_generator/dispatch_lag.cpp
+        src/load_generator/http_transport.cpp
         src/load_generator/open_loop_executor.cpp
         src/load_generator/traffic_pattern.cpp
+        src/http_server.cpp
+        src/server_runtime.cpp
     )
-    target_include_directories(inferserve_load_generator_tests PRIVATE src/load_generator)
+    target_include_directories(inferserve_load_generator_tests PRIVATE include src/load_generator)
     target_link_libraries(inferserve_load_generator_tests PRIVATE
         GTest::gtest_main
         inferserve_warnings
@@ -141,7 +151,9 @@ if(BUILD_TESTING)
     )
 
     include(GoogleTest)
-    gtest_discover_tests(inferserve_tests)
+    if(INFERSERVE_BUILD_SERVER)
+        gtest_discover_tests(inferserve_tests)
+    endif()
     gtest_discover_tests(inferserve_load_generator_tests)
 endif()
 

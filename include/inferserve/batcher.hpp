@@ -180,7 +180,7 @@ private:
         }
 
         if (backend_ == nullptr) {
-            callback_(batch);
+            notify_batch(batch);
             return;
         }
 
@@ -216,10 +216,14 @@ private:
         }
     }
 
-    void notify_batch(const RequestBatch& batch)
+    void notify_batch(const RequestBatch& batch) noexcept
     {
         if (callback_) {
-            callback_(batch);
+            try {
+                callback_(batch);
+            } catch (...) {
+                // Observer failures must not change request results or stop batching.
+            }
         }
     }
 

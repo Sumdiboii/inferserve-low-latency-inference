@@ -6,6 +6,7 @@
 #include <inferserve/batch_worker_pool.hpp>
 #include <inferserve/http_server.hpp>
 #include <inferserve/onnx_runtime_backend.hpp>
+#include <inferserve/server_runtime.hpp>
 
 #include <chrono>
 #include <csignal>
@@ -18,6 +19,7 @@
 
 #include <arpa/inet.h>
 #include <netinet/in.h>
+#include <poll.h>
 #include <pthread.h>
 #include <sys/socket.h>
 #include <unistd.h>
@@ -126,20 +128,125 @@ TEST(HttpServer, RegistersHealthAndInferenceEndpoints)
     EXPECT_FALSE(rejection_was_queued);
 }
 
+TEST(HttpServer, RejectsRequestBodyLargerThanOneMiB)
+{
+    inferserve::RequestAdmission admission(1);
+    inferserve::HttpServer server(admission, 0);
+    std::thread server_thread([&server] { server.run(); });
+
+    constexpr std::size_t oversized_body_length = 1024 * 1024 + 1;
+    const std::string request =
+        "POST /infer HTTP/1.1\r\nHost: localhost\r\nContent-Length: " +
+        std::to_string(oversized_body_length) + "\r\n\r\n";
+    const std::string response = get_response(server.port(), request);
+    server.stop();
+    server_thread.join();
+
+    EXPECT_NE(response.find("HTTP/1.1 413 Payload Too Large"), std::string::npos);
+}
+
+TEST(HttpServer, ReportsAdmissionShutdownSeparatelyFromQueueSaturation)
+{
+    inferserve::RequestAdmission admission(1);
+    admission.shutdown();
+    inferserve::HttpServer server(admission, 0);
+    std::thread server_thread([&server] { server.run(); });
+
+    const std::string response = post_infer(server.port(), "{\"input\":[1.5,-2,3]}");
+    server.stop();
+    server_thread.join();
+
+    EXPECT_NE(response.find("HTTP/1.1 503 Service Unavailable"), std::string::npos);
+    EXPECT_NE(response.find("server is shutting down"), std::string::npos);
+    EXPECT_EQ(response.find("request was not accepted"), std::string::npos);
+}
+
+TEST(HttpServer, StalledClientDoesNotBlockFollowingClient)
+{
+    inferserve::RequestAdmission admission(2);
+    inferserve::HttpServer server(admission, 0);
+    std::thread server_thread([&server] { server.run(); });
+
+    const int stalled_client = ::socket(AF_INET, SOCK_STREAM, 0);
+    if (stalled_client < 0) {
+        server.stop();
+        server_thread.join();
+        FAIL() << "could not create stalled client socket";
+        return;
+    }
+
+    sockaddr_in address{};
+    address.sin_family = AF_INET;
+    address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    address.sin_port = htons(server.port());
+    if (::connect(stalled_client, reinterpret_cast<const sockaddr*>(&address), sizeof(address)) < 0) {
+        ::close(stalled_client);
+        server.stop();
+        server_thread.join();
+        FAIL() << "could not connect stalled client";
+        return;
+    }
+
+    const std::string partial_request = "GET /health HTTP/1.1\r\nHost: localhost\r\n";
+    if (::send(stalled_client, partial_request.data(), partial_request.size(), 0) !=
+        static_cast<ssize_t>(partial_request.size())) {
+        ::close(stalled_client);
+        server.stop();
+        server_thread.join();
+        FAIL() << "could not send partial request";
+        return;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+    const int valid_client = ::socket(AF_INET, SOCK_STREAM, 0);
+    if (valid_client < 0) {
+        server.stop();
+        ::close(stalled_client);
+        server_thread.join();
+        FAIL() << "could not create valid client socket";
+        return;
+    }
+    if (::connect(valid_client, reinterpret_cast<const sockaddr*>(&address), sizeof(address)) < 0) {
+        ::close(valid_client);
+        server.stop();
+        ::close(stalled_client);
+        server_thread.join();
+        FAIL() << "could not connect valid client";
+        return;
+    }
+
+    const std::string health_request = "GET /health HTTP/1.1\r\nHost: localhost\r\n\r\n";
+    const ssize_t sent = ::send(valid_client, health_request.data(), health_request.size(), 0);
+    pollfd response_ready{valid_client, POLLIN, 0};
+    const int ready = sent == static_cast<ssize_t>(health_request.size())
+        ? ::poll(&response_ready, 1, 1000)
+        : -1;
+    std::string response;
+    if (ready > 0) {
+        char buffer[512];
+        ssize_t received = 0;
+        while ((received = ::recv(valid_client, buffer, sizeof(buffer), 0)) > 0) {
+            response.append(buffer, static_cast<std::size_t>(received));
+        }
+    }
+
+    ::close(valid_client);
+    server.stop();
+    ::close(stalled_client);
+    server_thread.join();
+
+    EXPECT_EQ(sent, static_cast<ssize_t>(health_request.size()));
+    EXPECT_GT(ready, 0);
+    EXPECT_NE(response.find("HTTP/1.1 200 OK"), std::string::npos);
+}
+
 TEST(HttpServer, EndToEndInferenceRunsThroughOnnxBackend)
 {
     RecordingOnnxBackend backend(INFERSERVE_TEST_DYNAMIC_BATCH_MODEL_PATH);
-    backend.load();
     std::future<inferserve::InferenceResults> inference_result = backend.result();
-    inferserve::RequestAdmission admission(4);
-    inferserve::BatchDispatchQueue dispatch_queue(4);
-    inferserve::Batcher batcher(admission, dispatch_queue, 2, std::chrono::milliseconds(10));
-    inferserve::BatchWorkerPool workers(dispatch_queue, backend, 1);
-    inferserve::HttpServer server(admission, 0);
-
-    workers.start();
-    batcher.start();
-    std::thread server_thread([&server] { server.run(); });
+    volatile std::sig_atomic_t stop_requested = 0;
+    inferserve::ServerRuntime server(backend, 0);
+    std::thread server_thread([&] { server.run(&stop_requested); });
 
     const std::string http_response = post_infer(server.port(), "{\"input\":[1.5,-2.25]}");
     const bool inference_completed = inference_result.wait_for(std::chrono::seconds(2)) ==
@@ -149,11 +256,8 @@ TEST(HttpServer, EndToEndInferenceRunsThroughOnnxBackend)
         outputs = inference_result.get();
     }
 
-    server.stop();
+    stop_requested = 1;
     server_thread.join();
-    batcher.stop();
-    workers.shutdown();
-    workers.join();
 
     EXPECT_NE(http_response.find("HTTP/1.1 202 Accepted"), std::string::npos);
     EXPECT_NE(http_response.find("{\"request_id\":1}"), std::string::npos);

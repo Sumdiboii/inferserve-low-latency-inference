@@ -6,6 +6,7 @@
 #include <cctype>
 #include <cmath>
 #include <cstring>
+#include <limits>
 #include <optional>
 #include <poll.h>
 #include <stdexcept>
@@ -23,6 +24,8 @@ namespace inferserve {
 namespace {
 
 constexpr std::size_t kMaxRequestHeaderSize = 16 * 1024;
+constexpr std::size_t kMaxRequestBodySize = 1024 * 1024;
+constexpr std::size_t kClientWorkerCount = 4;
 
 void skip_whitespace(std::string_view text, std::size_t& position)
 {
@@ -118,6 +121,9 @@ std::optional<std::size_t> content_length(std::string_view headers)
                 }
                 std::size_t length = 0;
                 const auto [end, error] = std::from_chars(value.data(), value.data() + value.size(), length);
+                if (error == std::errc::result_out_of_range && end == value.data() + value.size()) {
+                    return std::numeric_limits<std::size_t>::max();
+                }
                 if (error != std::errc{} || end != value.data() + value.size()) {
                     return std::nullopt;
                 }
@@ -139,9 +145,13 @@ std::string response(int status, std::string_view reason, std::string_view body)
 bool receive_more(int client,
                   std::array<char, 2048>& buffer,
                   std::string& request,
+                  std::size_t max_bytes_to_receive,
                   const std::atomic<bool>& stopping,
                   const volatile std::sig_atomic_t* shutdown_requested)
 {
+    if (max_bytes_to_receive == 0) {
+        return false;
+    }
     while (!stopping.load() && (shutdown_requested == nullptr || *shutdown_requested == 0)) {
         pollfd connection{client, POLLIN, 0};
         const int ready = ::poll(&connection, 1, 100);
@@ -158,7 +168,10 @@ bool receive_more(int client,
             return false;
         }
 
-        const ssize_t received = ::recv(client, buffer.data(), buffer.size(), 0);
+        const std::size_t receive_size = max_bytes_to_receive < buffer.size()
+            ? max_bytes_to_receive
+            : buffer.size();
+        const ssize_t received = ::recv(client, buffer.data(), receive_size, 0);
         if (received < 0 && errno == EINTR) {
             continue;
         }
@@ -181,6 +194,9 @@ void send_all(int socket, std::string_view data)
             }
             return;
         }
+        if (sent == 0) {
+            return;
+        }
         data.remove_prefix(static_cast<std::size_t>(sent));
     }
 }
@@ -194,7 +210,8 @@ void handle_client(int client,
     std::string request;
     std::array<char, 2048> buffer{};
     while (request.size() < kMaxRequestHeaderSize && request.find("\r\n\r\n") == std::string::npos) {
-        if (!receive_more(client, buffer, request, stopping, shutdown_requested)) {
+        if (!receive_more(client, buffer, request, kMaxRequestHeaderSize - request.size(), stopping,
+                          shutdown_requested)) {
             return;
         }
     }
@@ -230,9 +247,15 @@ void handle_client(int client,
             send_all(client, response(400, "Bad Request", "{\"error\":\"invalid request body\"}"));
             return;
         }
+        if (*body_length > kMaxRequestBodySize) {
+            send_all(client, response(413, "Payload Too Large", "{\"error\":\"request body is too large\"}"));
+            return;
+        }
         const std::size_t body_start = header_end + 4;
         while (request.size() - body_start < *body_length) {
-            if (!receive_more(client, buffer, request, stopping, shutdown_requested)) {
+            const std::size_t body_bytes_received = request.size() - body_start;
+            const std::size_t body_bytes_remaining = *body_length - body_bytes_received;
+            if (!receive_more(client, buffer, request, body_bytes_remaining, stopping, shutdown_requested)) {
                 if (stopping.load() ||
                     (shutdown_requested != nullptr && *shutdown_requested != 0)) {
                     return;
@@ -254,6 +277,8 @@ void handle_client(int client,
             send_all(client, response(202, "Accepted", "{\"request_id\":" + std::to_string(request_id) + "}"));
         } else if (status == Status::InvalidInput) {
             send_all(client, response(400, "Bad Request", "{\"error\":\"invalid inference input\"}"));
+        } else if (status == Status::ShuttingDown) {
+            send_all(client, response(503, "Service Unavailable", "{\"error\":\"server is shutting down\"}"));
         } else {
             send_all(client, response(503, "Service Unavailable", "{\"error\":\"request was not accepted\"}"));
         }
@@ -311,42 +336,79 @@ HttpServer::~HttpServer()
 
 void HttpServer::run(const volatile std::sig_atomic_t* shutdown_requested)
 {
-    while (!stopping_.load()) {
-        if (shutdown_requested != nullptr && *shutdown_requested != 0) {
-            stop();
-            return;
+    std::vector<std::thread> client_workers;
+    client_workers.reserve(kClientWorkerCount);
+    try {
+        for (std::size_t index = 0; index < kClientWorkerCount; ++index) {
+            client_workers.emplace_back([this, shutdown_requested] {
+                while (std::optional<int> client = clients_.pop()) {
+                    handle_client(*client, admission_, next_request_id_, stopping_, shutdown_requested);
+                    ::close(*client);
+                }
+            });
         }
+    } catch (...) {
+        stop();
+        clients_.shutdown();
+        for (std::thread& worker : client_workers) {
+            worker.join();
+        }
+        throw;
+    }
 
-        pollfd listener{socket_, POLLIN, 0};
-        const int ready = ::poll(&listener, 1, 100);
-        if (ready < 0) {
-            if (errno == EINTR) {
+    try {
+        while (!stopping_.load()) {
+            if (shutdown_requested != nullptr && *shutdown_requested != 0) {
+                stop();
+                break;
+            }
+
+            pollfd listener{socket_, POLLIN, 0};
+            const int ready = ::poll(&listener, 1, 100);
+            if (ready < 0) {
+                if (errno == EINTR) {
+                    continue;
+                }
+                if (stopping_.load()) {
+                    break;
+                }
+                throw std::runtime_error("HTTP poll failed: " + std::string(std::strerror(errno)));
+            }
+            if (ready == 0) {
                 continue;
             }
             if (stopping_.load()) {
-                return;
+                break;
             }
-            throw std::runtime_error("HTTP poll failed: " + std::string(std::strerror(errno)));
-        }
-        if (ready == 0) {
-            continue;
-        }
-        if (stopping_.load()) {
-            return;
-        }
 
-        const int client = ::accept(socket_, nullptr, nullptr);
-        if (client < 0) {
-            if (errno == EINTR) {
-                continue;
+            const int client = ::accept(socket_, nullptr, nullptr);
+            if (client < 0) {
+                if (errno == EINTR) {
+                    continue;
+                }
+                if (stopping_.load()) {
+                    break;
+                }
+                throw std::runtime_error("HTTP accept failed: " + std::string(std::strerror(errno)));
             }
-            if (stopping_.load()) {
-                return;
+
+            if (!clients_.try_push(client)) {
+                send_all(client, response(503, "Service Unavailable", "{\"error\":\"server is busy\"}"));
+                ::close(client);
             }
-            throw std::runtime_error("HTTP accept failed: " + std::string(std::strerror(errno)));
         }
-        handle_client(client, admission_, next_request_id_, stopping_, shutdown_requested);
-        ::close(client);
+    } catch (...) {
+        stop();
+        clients_.shutdown();
+        for (std::thread& worker : client_workers) {
+            worker.join();
+        }
+        throw;
+    }
+
+    clients_.shutdown();
+    for (std::thread& worker : client_workers) {
+        worker.join();
     }
 }
 
