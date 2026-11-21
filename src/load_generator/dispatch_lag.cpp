@@ -17,11 +17,16 @@ double nearest_rank_percentile(const std::vector<double>& sorted_values, double 
 
 }  // namespace
 
-std::vector<RequestDispatchLag> calculate_dispatch_lags(const std::vector<RequestTimestamps>& records)
+std::vector<RequestDispatchLag> calculate_dispatch_lags(
+    const std::vector<RequestTimestamps>& records,
+    std::size_t warmup_count)
 {
     std::vector<RequestDispatchLag> dispatch_lags;
-    dispatch_lags.reserve(records.size());
+    dispatch_lags.reserve(records.size() > warmup_count ? records.size() - warmup_count : 0);
     for (const auto& record : records) {
+        if (record.request_index < warmup_count) {
+            continue;
+        }
         const auto lag = std::chrono::duration<double, std::milli>(record.actual_send - record.scheduled_arrival);
         dispatch_lags.push_back({record.request_index, lag.count()});
     }

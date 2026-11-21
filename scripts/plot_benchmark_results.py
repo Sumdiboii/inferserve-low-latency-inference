@@ -28,7 +28,10 @@ def load_metrics(path: Path) -> tuple[list[float], float | None]:
         if reader.fieldnames is None or not REQUIRED_COLUMNS.issubset(reader.fieldnames):
             missing = sorted(REQUIRED_COLUMNS.difference(reader.fieldnames or []))
             raise ValueError(f"{path}: missing CSV columns: {', '.join(missing)}")
+        has_warmup_column = "warmup" in (reader.fieldnames or [])
         for line_number, row in enumerate(reader, start=2):
+            if has_warmup_column and (row["warmup"] or "").strip().lower() == "true":
+                continue
             try:
                 scheduled = float(row["scheduled_arrival_ms"])
                 completion = float(row["completion_ms"])
@@ -48,8 +51,14 @@ def load_metrics(path: Path) -> tuple[list[float], float | None]:
     # A one-request run has no sample window, and a same-time burst measures drain
     # time rather than sustained throughput. Leave both undefined instead of
     # presenting a rate that invites comparison with steady offered-load runs.
-    if len(scheduled_arrivals) > 1 and completion_times and max(completion_times) > 0.0:
-        throughput = len(completion_times) * 1000.0 / max(completion_times)
+    if len(scheduled_arrivals) > 1 and completion_times:
+        if has_warmup_column:
+            earliest_measured = min(scheduled_arrivals)
+            window_ms = max(completion_times) - earliest_measured
+            if window_ms > 0.0:
+                throughput = len(completion_times) * 1000.0 / window_ms
+        elif max(completion_times) > 0.0:
+            throughput = len(completion_times) * 1000.0 / max(completion_times)
     return latencies, throughput
 
 

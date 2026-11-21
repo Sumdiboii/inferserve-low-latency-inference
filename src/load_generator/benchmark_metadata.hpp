@@ -14,6 +14,7 @@ struct BenchmarkMetadata {
     std::string mode;
     std::string transport;
     std::size_t request_count = 0;
+    std::size_t warmup_count = 0;
     double duration_seconds = 0.0;
     std::optional<double> configured_rate_per_second;
     std::optional<double> scheduled_duration_seconds;

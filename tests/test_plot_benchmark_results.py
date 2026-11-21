@@ -40,6 +40,46 @@ class BenchmarkPlotTest(unittest.TestCase):
                 _, throughput = load_metrics(path)
                 self.assertIsNone(throughput)
 
+    def test_warmup_rows_are_excluded_and_legacy_csv_remains_supported(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "records.csv"
+            with path.open("w", newline="", encoding="utf-8") as output:
+                writer = csv.DictWriter(
+                    output,
+                    fieldnames=["scheduled_arrival_ms", "completion_ms", "error", "warmup"],
+                )
+                writer.writeheader()
+                writer.writerow({"scheduled_arrival_ms": "0", "completion_ms": "100", "error": "", "warmup": "true"})
+                writer.writerow({"scheduled_arrival_ms": "1000", "completion_ms": "1020", "error": "", "warmup": "false"})
+                writer.writerow({"scheduled_arrival_ms": "2000", "completion_ms": "2020", "error": "", "warmup": "false"})
+            latencies, throughput = load_metrics(path)
+            self.assertEqual(latencies, [20.0, 20.0])
+            self.assertAlmostEqual(throughput, 2.0 * 1000.0 / 1020.0)
+
+            legacy = Path(directory) / "legacy.csv"
+            legacy.write_text(
+                "scheduled_arrival_ms,completion_ms,error\n"
+                "0,10,\n"
+                "100,110,\n",
+                encoding="utf-8",
+            )
+            legacy_latencies, legacy_throughput = load_metrics(legacy)
+            self.assertEqual(legacy_latencies, [10.0, 10.0])
+            self.assertAlmostEqual(legacy_throughput, 2.0 * 1000.0 / 110.0)
+
+    def test_empty_warmup_values_are_treated_as_measured(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "records.csv"
+            path.write_text(
+                "scheduled_arrival_ms,completion_ms,error,warmup\n"
+                "0,10,,\n"
+                "100,110,,false\n",
+                encoding="utf-8",
+            )
+            latencies, throughput = load_metrics(path)
+            self.assertEqual(latencies, [10.0, 10.0])
+            self.assertAlmostEqual(throughput, 2.0 * 1000.0 / 110.0)
+
     def test_legacy_csv_without_error_column_is_rejected(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "legacy.csv"

@@ -31,6 +31,9 @@ they do not define a sustained arrival window. The throughput plot describes
 generator-side request completion; an HTTP 202 response means admission, not
 inference completion. Legacy CSV files without the `error` column are rejected
 because they cannot identify requests that were not dispatched.
+CSV files containing a `warmup` column exclude rows marked `true` from latency
+and throughput calculations. Legacy CSV files without the `warmup` column are
+treated as fully measured runs.
 
 Run its focused parser and plot-output tests with:
 

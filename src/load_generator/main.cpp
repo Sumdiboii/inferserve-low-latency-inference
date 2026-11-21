@@ -42,6 +42,7 @@ struct Options {
     std::string_view csv_output_path;
     std::string_view http_host;
     std::uint16_t http_port = 0;
+    std::size_t warmup_count = 0;
 };
 
 bool parse_options(int argc, char* argv[], int positional_argc, Options& options)
@@ -52,6 +53,10 @@ bool parse_options(int argc, char* argv[], int positional_argc, Options& options
         if (option == "--csv" && argument < argc && options.csv_output_path.empty()) {
             options.csv_output_path = argv[argument++];
             if (options.csv_output_path.empty()) {
+                return false;
+            }
+        } else if (option == "--warmup-count" && argument < argc) {
+            if (!parse_integer(std::string_view(argv[argument++]), options.warmup_count)) {
                 return false;
             }
         } else if (option == "--http" && argument + 1 < argc && options.http_host.empty()) {
@@ -72,10 +77,10 @@ bool parse_options(int argc, char* argv[], int positional_argc, Options& options
 void print_usage()
 {
     std::cerr << "Usage:\n"
-                 "  inferserve_load_generator fixed-rate <count> <rate-per-second> [--http <host> <port>] [--csv <file>]\n"
-                 "  inferserve_load_generator burst <count> [--http <host> <port>] [--csv <file>]\n"
-                 "  inferserve_load_generator poisson <count> <rate-per-second> <seed> [--http <host> <port>] [--csv <file>]\n"
-                 "  inferserve_load_generator closed-loop <count> [--http <host> <port>] [--csv <file>]\n";
+                 "  inferserve_load_generator fixed-rate <count> <rate-per-second> [--warmup-count <N>] [--http <host> <port>] [--csv <file>]\n"
+                 "  inferserve_load_generator burst <count> [--warmup-count <N>] [--http <host> <port>] [--csv <file>]\n"
+                 "  inferserve_load_generator poisson <count> <rate-per-second> <seed> [--warmup-count <N>] [--http <host> <port>] [--csv <file>]\n"
+                 "  inferserve_load_generator closed-loop <count> [--warmup-count <N>] [--http <host> <port>] [--csv <file>]\n";
 }
 
 std::string utc_timestamp()
@@ -182,6 +187,10 @@ int main(int argc, char* argv[])
             print_usage();
             return 1;
         }
+        if (options.warmup_count > 0 && options.warmup_count >= count) {
+            std::cerr << "warmup-count must be less than the total request count\n";
+            return 1;
+        }
 
         inferserve::load_generator::BenchmarkMetadata metadata;
         metadata.run_timestamp_utc = utc_timestamp();
@@ -189,6 +198,7 @@ int main(int argc, char* argv[])
         metadata.mode = closed_loop ? "closed_loop" : "open_loop";
         metadata.transport = options.http_host.empty() ? "simulated" : "http";
         metadata.request_count = count;
+        metadata.warmup_count = options.warmup_count;
         metadata.configured_rate_per_second = configured_rate;
         metadata.scheduled_duration_seconds = closed_loop
                                                  ? std::nullopt
@@ -211,6 +221,9 @@ int main(int argc, char* argv[])
 
         bool has_failed_requests = false;
         for (const auto& record : records) {
+            if (record.request_index < options.warmup_count) {
+                continue;
+            }
             if (record.result.http_status != 0) {
                 std::lock_guard lock(output_mutex);
                 std::cout << "request " << record.request_index << " HTTP " << record.result.http_status << '\n';
@@ -223,10 +236,12 @@ int main(int argc, char* argv[])
         }
 
         if (!options.csv_output_path.empty()) {
-            inferserve::load_generator::export_records_csv(std::string(options.csv_output_path), records);
+            inferserve::load_generator::export_records_csv(
+                std::string(options.csv_output_path), records, options.warmup_count);
             inferserve::load_generator::export_benchmark_metadata_json(std::string(options.csv_output_path), metadata);
         }
-        const auto dispatch_lags = inferserve::load_generator::calculate_dispatch_lags(records);
+        const auto dispatch_lags =
+            inferserve::load_generator::calculate_dispatch_lags(records, options.warmup_count);
         for (const auto& dispatch_lag : dispatch_lags) {
             std::cout << "request " << dispatch_lag.request_index << " dispatch lag: " << dispatch_lag.milliseconds
                       << " ms\n";
@@ -237,7 +252,8 @@ int main(int argc, char* argv[])
                       << " p95=" << statistics.p95_ms << '\n';
         }
 
-        const auto performance = inferserve::load_generator::calculate_performance_statistics(records);
+        const auto performance =
+            inferserve::load_generator::calculate_performance_statistics(records, options.warmup_count);
         std::cout << "performance statistics:\n";
         if (performance.latency_ms.has_value()) {
             std::cout << "request latency from scheduled arrival (ms): p50=" << performance.latency_ms->p50_ms

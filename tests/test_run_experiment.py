@@ -158,9 +158,26 @@ Path(str(csv_path) + ".metadata.json").write_text(
             {"name": "closed", "pattern": "closed-loop", "count": 5},
             csv_path,
         )
-        self.assertEqual(fixed[:5], [str(load_generator), "fixed-rate", "5", "2.5", "--csv"])
+        self.assertEqual(fixed[:5], [str(load_generator), "fixed-rate", "5", "2.5", "--warmup-count"])
         self.assertEqual(poisson[1:5], ["poisson", "5", "3.0", "42"])
         self.assertEqual(closed[1:3], ["closed-loop", "5"])
+
+    def test_warmup_count_is_forwarded_and_validated(self):
+        load_generator = Path("/tmp/inferserve_load_generator")
+        csv_path = Path("/tmp/requests.csv")
+        command = build_load_generator_command(
+            load_generator,
+            {"name": "warmup", "pattern": "fixed-rate", "count": 5, "rate": 2, "warmup_count": 2},
+            csv_path,
+        )
+        self.assertIn("--warmup-count", command)
+        self.assertEqual(command[command.index("--warmup-count") + 1], "2")
+        with self.assertRaisesRegex(ValueError, "less than"):
+            build_load_generator_command(
+                load_generator,
+                {"name": "invalid", "pattern": "burst", "count": 3, "warmup_count": 3},
+                csv_path,
+            )
 
 
 if __name__ == "__main__":

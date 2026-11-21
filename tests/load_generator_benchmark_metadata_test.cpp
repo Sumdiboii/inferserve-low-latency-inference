@@ -17,6 +17,7 @@ TEST(BenchmarkMetadata, WritesRunConfigurationAndExplicitUnavailableValues)
     metadata.mode = "open_loop";
     metadata.transport = "http";
     metadata.request_count = 10;
+    metadata.warmup_count = 2;
     metadata.duration_seconds = 2.25;
     metadata.configured_rate_per_second = 5.0;
     metadata.scheduled_duration_seconds = 1.8;
@@ -31,6 +32,7 @@ TEST(BenchmarkMetadata, WritesRunConfigurationAndExplicitUnavailableValues)
     EXPECT_NE(json.find("\"mode\": \"open_loop\""), std::string::npos);
     EXPECT_NE(json.find("\"transport\": \"http\""), std::string::npos);
     EXPECT_NE(json.find("\"request_count\": 10"), std::string::npos);
+    EXPECT_NE(json.find("\"warmup_count\": 2"), std::string::npos);
     EXPECT_NE(json.find("\"configured_rate_per_second\": 5.000000"), std::string::npos);
     EXPECT_NE(json.find("\"http_host\": \"localhost\""), std::string::npos);
     EXPECT_NE(json.find("\"http_port\": 8080"), std::string::npos);

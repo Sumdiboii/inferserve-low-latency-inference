@@ -67,6 +67,13 @@ def build_load_generator_command(
         command.append(str(require_number(run, "rate", name)))
         command.append(str(require_integer(run, "seed", name)))
 
+    warmup_count = run.get("warmup_count", 0)
+    if isinstance(warmup_count, bool) or not isinstance(warmup_count, int) or warmup_count < 0:
+        raise ValueError(f"run '{name}': 'warmup_count' must be a non-negative integer")
+    if warmup_count > 0 and warmup_count >= count:
+        raise ValueError(f"run '{name}': 'warmup_count' must be less than 'count'")
+    command.extend(["--warmup-count", str(warmup_count)])
+
     http = run.get("http")
     if http is not None:
         if not isinstance(http, dict):

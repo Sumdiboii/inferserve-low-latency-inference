@@ -35,6 +35,7 @@ struct PerformanceStatistics {
 // Offered rate uses the scheduled window from generator start through the last arrival,
 // plus one mean inter-arrival interval to account for the final scheduled request.
 [[nodiscard]] PerformanceStatistics calculate_performance_statistics(
-    const std::vector<RequestTimestamps>& records);
+    const std::vector<RequestTimestamps>& records,
+    std::size_t warmup_count = 0);
 
 }  // namespace inferserve::load_generator

@@ -100,4 +100,86 @@ TEST(PerformanceStatistics, EmptySamplesProduceNoRatesOrPercentiles)
     EXPECT_FALSE(statistics.http_acknowledgements_per_second.has_value());
 }
 
+TEST(PerformanceStatistics, ExcludesWarmupFromStatisticsAndMeasuredWindows)
+{
+    const auto origin = std::chrono::steady_clock::time_point{};
+    const std::vector<RequestTimestamps> records{
+        record(0, origin, origin, origin + 10ms, origin + 100ms,
+               RequestResult{false, 503, "warmup rejected"}),
+        record(1, origin, origin + 100ms, origin + 110ms, origin + 200ms,
+               RequestResult{false, 0, "warmup failed"}),
+        record(2, origin, origin + 1s, origin + 1010ms, origin + 1020ms,
+               RequestResult{true, 202, {}}),
+        record(3, origin, origin + 2s, origin + 2010ms, origin + 2020ms,
+               RequestResult{true, 200, {}}),
+    };
+
+    const PerformanceStatistics statistics = calculate_performance_statistics(records, 2);
+
+    EXPECT_EQ(statistics.scheduled_requests, 2U);
+    EXPECT_EQ(statistics.completed_requests, 2U);
+    EXPECT_EQ(statistics.successful_http_acknowledgements, 2U);
+    EXPECT_EQ(statistics.failures.failed, 0U);
+    EXPECT_EQ(statistics.failures.rejected, 0U);
+    ASSERT_TRUE(statistics.latency_ms.has_value());
+    EXPECT_EQ(statistics.latency_ms->sample_count, 2U);
+    EXPECT_DOUBLE_EQ(statistics.latency_ms->p50_ms, 20.0);
+    ASSERT_TRUE(statistics.throughput_requests_per_second.has_value());
+    EXPECT_NEAR(*statistics.throughput_requests_per_second, 2.0 / 1.020, 1e-9);
+    ASSERT_TRUE(statistics.offered_requests_per_second.has_value());
+    EXPECT_NEAR(*statistics.offered_requests_per_second, 1.0, 1e-9);
+}
+
+TEST(PerformanceStatistics, ZeroWarmupPreservesOriginalMeasurementWindows)
+{
+    const auto origin = std::chrono::steady_clock::time_point{};
+    const std::vector<RequestTimestamps> records{
+        record(0, origin, origin + 100ms, origin + 110ms, origin + 500ms),
+        record(1, origin, origin + 1100ms, origin + 1110ms, origin + 1500ms),
+    };
+
+    const PerformanceStatistics statistics = calculate_performance_statistics(records, 0);
+
+    ASSERT_TRUE(statistics.throughput_requests_per_second.has_value());
+    EXPECT_NEAR(*statistics.throughput_requests_per_second, 2.0 / 1.5, 1e-9);
+    ASSERT_TRUE(statistics.offered_requests_per_second.has_value());
+    EXPECT_NEAR(*statistics.offered_requests_per_second, 2.0 / 2.1, 1e-9);
+}
+
+TEST(PerformanceStatistics, OpenLoopWarmupWindowStartsAtFirstMeasuredScheduledArrival)
+{
+    const auto origin = std::chrono::steady_clock::time_point{};
+    const std::vector<RequestTimestamps> records{
+        record(0, origin, origin, origin + 10ms, origin + 100ms),
+        record(1, origin, origin + 500ms, origin + 510ms, origin + 600ms),
+        record(2, origin, origin + 1000ms, origin + 1010ms, origin + 1100ms),
+        record(3, origin, origin + 1500ms, origin + 1510ms, origin + 1600ms),
+    };
+
+    const PerformanceStatistics statistics = calculate_performance_statistics(records, 2);
+
+    ASSERT_TRUE(statistics.throughput_requests_per_second.has_value());
+    EXPECT_NEAR(*statistics.throughput_requests_per_second, 2.0 / 0.600, 1e-9);
+    ASSERT_TRUE(statistics.offered_requests_per_second.has_value());
+    EXPECT_NEAR(*statistics.offered_requests_per_second, 2.0 / 1.0, 1e-9);
+}
+
+TEST(PerformanceStatistics, ClosedLoopWarmupWindowStartsAtFirstMeasuredArrival)
+{
+    const auto origin = std::chrono::steady_clock::time_point{};
+    const std::vector<RequestTimestamps> records{
+        record(0, origin, origin, origin + 10ms, origin + 100ms),
+        record(1, origin, origin + 100ms, origin + 110ms, origin + 200ms),
+        record(2, origin, origin + 300ms, origin + 310ms, origin + 400ms),
+        record(3, origin, origin + 500ms, origin + 510ms, origin + 600ms),
+    };
+
+    const PerformanceStatistics statistics = calculate_performance_statistics(records, 2);
+
+    ASSERT_TRUE(statistics.throughput_requests_per_second.has_value());
+    EXPECT_NEAR(*statistics.throughput_requests_per_second, 2.0 / 0.300, 1e-9);
+    ASSERT_TRUE(statistics.offered_requests_per_second.has_value());
+    EXPECT_NEAR(*statistics.offered_requests_per_second, 2.0 / 0.400, 1e-9);
+}
+
 }  // namespace

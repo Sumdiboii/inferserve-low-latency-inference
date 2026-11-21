@@ -88,6 +88,7 @@ void write_benchmark_metadata_json(std::ostream& output, const BenchmarkMetadata
     output << ",\n  \"transport\": ";
     write_json_string(output, metadata.transport);
     output << ",\n  \"request_count\": " << metadata.request_count
+           << ",\n  \"warmup_count\": " << metadata.warmup_count
            << ",\n  \"duration_seconds\": " << metadata.duration_seconds
            << ",\n  \"configured_rate_per_second\": ";
     write_optional(output, metadata.configured_rate_per_second);
