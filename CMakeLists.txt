@@ -97,6 +97,18 @@ include(CTest)
 if(BUILD_TESTING)
     include(FetchContent)
 
+    find_package(Python3 REQUIRED COMPONENTS Interpreter)
+    add_test(
+        NAME python_benchmark_plot_tests
+        COMMAND ${Python3_EXECUTABLE} -m unittest tests/test_plot_benchmark_results.py
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    )
+    add_test(
+        NAME python_experiment_runner_tests
+        COMMAND ${Python3_EXECUTABLE} -m unittest tests/test_run_experiment.py
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    )
+
     set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
     set(BUILD_GMOCK OFF CACHE BOOL "" FORCE)
 
