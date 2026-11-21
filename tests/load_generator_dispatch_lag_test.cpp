@@ -41,4 +41,25 @@ TEST(DispatchLag, CalculatesPerRequestLagAndNearestRankStatistics)
     EXPECT_DOUBLE_EQ(statistics.p95_ms, 40.0);
 }
 
+TEST(DispatchLag, ExcludesWarmupPrefixFromPerRequestAndSummaryStatistics)
+{
+    using Clock = std::chrono::steady_clock;
+    const auto origin = Clock::time_point{};
+    const std::vector<RequestTimestamps> records{
+        {0, origin, origin, origin + 40ms, origin + 50ms},
+        {1, origin, origin + 1s, origin + 1s + 100ms, origin + 1s + 110ms},
+        {2, origin, origin + 2s, origin + 2s + 20ms, origin + 2s + 30ms},
+    };
+
+    const auto dispatch_lags = calculate_dispatch_lags(records, 2);
+
+    ASSERT_EQ(dispatch_lags.size(), 1);
+    EXPECT_EQ(dispatch_lags[0].request_index, 2);
+    EXPECT_DOUBLE_EQ(dispatch_lags[0].milliseconds, 20.0);
+    const auto statistics = summarize_dispatch_lags(dispatch_lags);
+    EXPECT_DOUBLE_EQ(statistics.mean_ms, 20.0);
+    EXPECT_DOUBLE_EQ(statistics.p50_ms, 20.0);
+    EXPECT_DOUBLE_EQ(statistics.p95_ms, 20.0);
+}
+
 }  // namespace

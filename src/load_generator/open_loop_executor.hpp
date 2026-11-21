@@ -13,6 +13,7 @@ struct RequestResult {
     bool success = true;
     int http_status = 0;
     std::string error;
+    bool dispatched = true;
 };
 
 struct RequestTimestamps {

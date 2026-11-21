@@ -1,17 +1,23 @@
 #include "closed_loop_executor.hpp"
 #include "open_loop_executor.hpp"
+#include "benchmark_metadata.hpp"
 #include "csv_export.hpp"
 #include "dispatch_lag.hpp"
 #include "http_transport.hpp"
+#include "performance_stats.hpp"
 #include "traffic_pattern.hpp"
 
 #include <charconv>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <ctime>
 #include <exception>
 #include <iomanip>
 #include <iostream>
 #include <mutex>
+#include <optional>
+#include <sstream>
 #include <string>
 #include <string_view>
 #include <system_error>
@@ -36,6 +42,7 @@ struct Options {
     std::string_view csv_output_path;
     std::string_view http_host;
     std::uint16_t http_port = 0;
+    std::size_t warmup_count = 0;
 };
 
 bool parse_options(int argc, char* argv[], int positional_argc, Options& options)
@@ -46,6 +53,10 @@ bool parse_options(int argc, char* argv[], int positional_argc, Options& options
         if (option == "--csv" && argument < argc && options.csv_output_path.empty()) {
             options.csv_output_path = argv[argument++];
             if (options.csv_output_path.empty()) {
+                return false;
+            }
+        } else if (option == "--warmup-count" && argument < argc) {
+            if (!parse_integer(std::string_view(argv[argument++]), options.warmup_count)) {
                 return false;
             }
         } else if (option == "--http" && argument + 1 < argc && options.http_host.empty()) {
@@ -66,10 +77,34 @@ bool parse_options(int argc, char* argv[], int positional_argc, Options& options
 void print_usage()
 {
     std::cerr << "Usage:\n"
-                 "  inferserve_load_generator fixed-rate <count> <rate-per-second> [--http <host> <port>] [--csv <file>]\n"
-                 "  inferserve_load_generator burst <count> [--http <host> <port>] [--csv <file>]\n"
-                 "  inferserve_load_generator poisson <count> <rate-per-second> <seed> [--http <host> <port>] [--csv <file>]\n"
-                 "  inferserve_load_generator closed-loop <count> [--http <host> <port>] [--csv <file>]\n";
+                 "  inferserve_load_generator fixed-rate <count> <rate-per-second> [--warmup-count <N>] [--http <host> <port>] [--csv <file>]\n"
+                 "  inferserve_load_generator burst <count> [--warmup-count <N>] [--http <host> <port>] [--csv <file>]\n"
+                 "  inferserve_load_generator poisson <count> <rate-per-second> <seed> [--warmup-count <N>] [--http <host> <port>] [--csv <file>]\n"
+                 "  inferserve_load_generator closed-loop <count> [--warmup-count <N>] [--http <host> <port>] [--csv <file>]\n";
+}
+
+std::string utc_timestamp()
+{
+    const std::time_t timestamp = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+    std::tm utc_time{};
+#if defined(_WIN32)
+    gmtime_s(&utc_time, &timestamp);
+#else
+    gmtime_r(&timestamp, &utc_time);
+#endif
+    std::ostringstream output;
+    output << std::put_time(&utc_time, "%Y-%m-%dT%H:%M:%SZ");
+    return output.str();
+}
+
+void print_rate(std::string_view label, const std::optional<double>& rate)
+{
+    std::cout << label << ": ";
+    if (rate.has_value()) {
+        std::cout << *rate << " requests/s\n";
+    } else {
+        std::cout << "n/a\n";
+    }
 }
 
 }  // namespace
@@ -91,6 +126,10 @@ int main(int argc, char* argv[])
         std::vector<double> arrivals;
         const std::string_view pattern(argv[1]);
         Options options;
+        std::optional<double> configured_rate;
+        std::optional<std::uint64_t> poisson_seed;
+        std::optional<std::size_t> concurrency;
+        const bool closed_loop = pattern == "closed-loop";
         std::cout << std::fixed << std::setprecision(3);
         std::mutex output_mutex;
         const auto execute_request = [&options, &output_mutex, pattern = std::string(pattern)](
@@ -105,12 +144,12 @@ int main(int argc, char* argv[])
         };
         std::vector<inferserve::load_generator::RequestTimestamps> records;
 
-        if (pattern == "closed-loop") {
+        if (closed_loop) {
             if (!parse_options(argc, argv, 3, options)) {
                 print_usage();
                 return 1;
             }
-            records = inferserve::load_generator::execute_closed_loop_with_results(count, execute_request);
+            concurrency = 1;
         } else if (pattern == "fixed-rate") {
             if (!parse_options(argc, argv, 4, options)) {
                 print_usage();
@@ -121,6 +160,7 @@ int main(int argc, char* argv[])
                 std::cerr << "rate-per-second must be a number\n";
                 return 1;
             }
+            configured_rate = rate;
             arrivals = inferserve::load_generator::fixed_rate_arrivals(count, rate);
         } else if (pattern == "burst") {
             if (!parse_options(argc, argv, 3, options)) {
@@ -140,18 +180,52 @@ int main(int argc, char* argv[])
                 std::cerr << "poisson requires a numeric rate and non-negative integer seed\n";
                 return 1;
             }
+            configured_rate = rate;
+            poisson_seed = seed;
             arrivals = inferserve::load_generator::poisson_arrivals(count, rate, seed);
         } else {
             print_usage();
             return 1;
         }
+        if (options.warmup_count > 0 && options.warmup_count >= count) {
+            std::cerr << "warmup-count must be less than the total request count\n";
+            return 1;
+        }
 
-        if (pattern != "closed-loop") {
+        inferserve::load_generator::BenchmarkMetadata metadata;
+        metadata.run_timestamp_utc = utc_timestamp();
+        metadata.traffic_pattern = std::string(pattern);
+        metadata.mode = closed_loop ? "closed_loop" : "open_loop";
+        metadata.transport = options.http_host.empty() ? "simulated" : "http";
+        metadata.request_count = count;
+        metadata.warmup_count = options.warmup_count;
+        metadata.configured_rate_per_second = configured_rate;
+        metadata.scheduled_duration_seconds = closed_loop
+                                                 ? std::nullopt
+                                                 : std::optional<double>(arrivals.empty() ? 0.0 : arrivals.back());
+        metadata.poisson_seed = poisson_seed;
+        metadata.concurrency = concurrency;
+        if (!options.http_host.empty()) {
+            metadata.http_host = std::string(options.http_host);
+            metadata.http_port = options.http_port;
+        }
+        inferserve::load_generator::collect_benchmark_environment_start(metadata);
+
+        const auto run_started = std::chrono::steady_clock::now();
+        if (closed_loop) {
+            records = inferserve::load_generator::execute_closed_loop_with_results(count, execute_request);
+        } else {
             records = inferserve::load_generator::execute_open_loop_with_results(arrivals, execute_request);
         }
+        inferserve::load_generator::collect_benchmark_environment_end(metadata);
+        metadata.duration_seconds =
+            std::chrono::duration<double>(std::chrono::steady_clock::now() - run_started).count();
 
         bool has_failed_requests = false;
         for (const auto& record : records) {
+            if (record.request_index < options.warmup_count) {
+                continue;
+            }
             if (record.result.http_status != 0) {
                 std::lock_guard lock(output_mutex);
                 std::cout << "request " << record.request_index << " HTTP " << record.result.http_status << '\n';
@@ -164,9 +238,12 @@ int main(int argc, char* argv[])
         }
 
         if (!options.csv_output_path.empty()) {
-            inferserve::load_generator::export_records_csv(std::string(options.csv_output_path), records);
+            inferserve::load_generator::export_records_csv(
+                std::string(options.csv_output_path), records, options.warmup_count);
+            inferserve::load_generator::export_benchmark_metadata_json(std::string(options.csv_output_path), metadata);
         }
-        const auto dispatch_lags = inferserve::load_generator::calculate_dispatch_lags(records);
+        const auto dispatch_lags =
+            inferserve::load_generator::calculate_dispatch_lags(records, options.warmup_count);
         for (const auto& dispatch_lag : dispatch_lags) {
             std::cout << "request " << dispatch_lag.request_index << " dispatch lag: " << dispatch_lag.milliseconds
                       << " ms\n";
@@ -176,6 +253,24 @@ int main(int argc, char* argv[])
             std::cout << "dispatch lag statistics (ms): mean=" << statistics.mean_ms << " p50=" << statistics.p50_ms
                       << " p95=" << statistics.p95_ms << '\n';
         }
+
+        const auto performance =
+            inferserve::load_generator::calculate_performance_statistics(records, options.warmup_count);
+        std::cout << "performance statistics:\n";
+        if (performance.latency_ms.has_value()) {
+            std::cout << "request latency from scheduled arrival (ms): p50=" << performance.latency_ms->p50_ms
+                      << " p95=" << performance.latency_ms->p95_ms << " p99=" << performance.latency_ms->p99_ms
+                      << " samples=" << performance.latency_ms->sample_count << '\n';
+        } else {
+            std::cout << "request latency from scheduled arrival (ms): n/a\n";
+        }
+        print_rate("throughput (completed dispatched requests)", performance.throughput_requests_per_second);
+        print_rate("offered rate (scheduled requests)", performance.offered_requests_per_second);
+        print_rate("HTTP acknowledgement rate (successful 2xx; 202 means admitted, not inference complete)",
+                   performance.http_acknowledgements_per_second);
+        std::cout << "request failures: failed=" << performance.failures.failed
+                  << " rejected=" << performance.failures.rejected
+                  << " undispatched=" << performance.failures.undispatched << '\n';
         if (has_failed_requests) {
             return 2;
         }

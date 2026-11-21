@@ -13,6 +13,7 @@
 #include <inferserve/batch_dispatch_queue.hpp>
 #include <inferserve/core_types.hpp>
 #include <inferserve/request_admission.hpp>
+#include <inferserve/runtime_metrics.hpp>
 
 namespace inferserve {
 
@@ -24,11 +25,13 @@ public:
     Batcher(RequestAdmission& admission,
             Backend& backend,
             std::size_t max_batch_size,
-            std::chrono::milliseconds max_batch_delay = std::chrono::milliseconds::zero())
+            std::chrono::milliseconds max_batch_delay = std::chrono::milliseconds::zero(),
+            RuntimeMetrics* metrics = nullptr)
         : admission_(admission),
           backend_(&backend),
           max_batch_size_(max_batch_size),
-          max_batch_delay_(max_batch_delay)
+          max_batch_delay_(max_batch_delay),
+          metrics_(metrics)
     {
         validate_configuration();
     }
@@ -66,12 +69,14 @@ public:
     Batcher(RequestAdmission& admission,
             BatchDispatchQueue& dispatch_queue,
             std::size_t max_batch_size,
-            std::chrono::milliseconds max_batch_delay = std::chrono::milliseconds::zero())
+            std::chrono::milliseconds max_batch_delay = std::chrono::milliseconds::zero(),
+            RuntimeMetrics* metrics = nullptr)
         : admission_(admission),
           backend_(nullptr),
           max_batch_size_(max_batch_size),
           dispatch_queue_(&dispatch_queue),
-          max_batch_delay_(max_batch_delay)
+          max_batch_delay_(max_batch_delay),
+          metrics_(metrics)
     {
         validate_configuration();
     }
@@ -109,6 +114,9 @@ private:
                 pending_request_.reset();
             } else {
                 first = admission_.pop();
+                if (first.has_value()) {
+                    mark_dequeued(*first);
+                }
             }
             if (!first.has_value()) {
                 return;
@@ -121,6 +129,7 @@ private:
             if (max_batch_delay_ == std::chrono::milliseconds::zero()) {
                 Request next(RequestId(0), Data{});
                 while (batch.size() < max_batch_size_ && admission_.try_pop(next)) {
+                    mark_dequeued(next);
                     if (next.input.size() != batch.front().input.size()) {
                         pending_request_ = std::move(next);
                         break;
@@ -140,6 +149,7 @@ private:
                     if (!next.has_value()) {
                         break;
                     }
+                    mark_dequeued(*next);
                     if (next->input.size() != batch.front().input.size()) {
                         pending_request_ = std::move(next);
                         break;
@@ -166,12 +176,27 @@ private:
         }
     }
 
+    void mark_dequeued(Request& request)
+    {
+        const TimePoint dequeued = clock_.now();
+        request.dequeued = dequeued;
+        if (metrics_ != nullptr && request.enqueued.has_value()) {
+            metrics_->record_queue_wait(
+                std::chrono::duration_cast<std::chrono::nanoseconds>(dequeued - *request.enqueued));
+        }
+    }
+
     void execute(RequestBatch& batch)
     {
         if (dispatch_queue_ != nullptr) {
+            const std::size_t batch_size = batch.size();
             const BatchDispatchQueue::PushResult result =
                 dispatch_queue_->try_push_result(std::move(batch));
-            if (result != BatchDispatchQueue::PushResult::Pushed) {
+            if (result == BatchDispatchQueue::PushResult::Pushed) {
+                if (metrics_ != nullptr) {
+                    metrics_->record_dispatched_batch(batch_size);
+                }
+            } else {
                 complete_with_status(
                     batch, result == BatchDispatchQueue::PushResult::Full ? Status::QueueFull
                                                                           : Status::InternalError);
@@ -191,13 +216,16 @@ private:
         }
 
         const TimePoint exec_start = clock_.now();
+        if (metrics_ != nullptr) {
+            metrics_->record_dispatched_batch(batch.size());
+        }
         for (Request& request : batch) {
             request.exec_start = exec_start;
         }
 
         try {
             const InferenceResults results = backend_->infer(inputs);
-            record_exec_end(batch);
+            record_exec_end(batch, exec_start);
             if (results.size() != batch.size()) {
                 complete_with_error(batch);
                 notify_batch(batch);
@@ -210,7 +238,7 @@ private:
             }
             notify_batch(batch);
         } catch (...) {
-            record_exec_end(batch);
+            record_exec_end(batch, exec_start);
             complete_with_error(batch);
             notify_batch(batch);
         }
@@ -227,11 +255,15 @@ private:
         }
     }
 
-    void record_exec_end(RequestBatch& batch)
+    void record_exec_end(RequestBatch& batch, TimePoint exec_start)
     {
         const TimePoint exec_end = clock_.now();
         for (Request& request : batch) {
             request.exec_end = exec_end;
+        }
+        if (metrics_ != nullptr) {
+            metrics_->record_execution(
+                std::chrono::duration_cast<std::chrono::nanoseconds>(exec_end - exec_start));
         }
     }
 
@@ -254,6 +286,7 @@ private:
     BatchCallback callback_;
     BatchDispatchQueue* dispatch_queue_ = nullptr;
     const std::chrono::milliseconds max_batch_delay_;
+    RuntimeMetrics* metrics_ = nullptr;
     MonotonicClock clock_;
     std::optional<Request> pending_request_;
     bool started_ = false;

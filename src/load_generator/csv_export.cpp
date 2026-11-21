@@ -36,13 +36,14 @@ void write_csv_field(std::ostream& output, std::string_view value)
 
 }  // namespace
 
-void write_records_csv(std::ostream& output, const std::vector<RequestTimestamps>& records)
+void write_records_csv(std::ostream& output, const std::vector<RequestTimestamps>& records,
+                       std::size_t warmup_count)
 {
-    const auto dispatch_lags = calculate_dispatch_lags(records);
+    const auto dispatch_lags = calculate_dispatch_lags(records, 0);
     const auto original_flags = output.flags();
     const auto original_precision = output.precision();
 
-    output << "request_index,scheduled_arrival_ms,actual_send_ms,completion_ms,dispatch_lag_ms,http_status,success,error\n";
+    output << "request_index,scheduled_arrival_ms,actual_send_ms,completion_ms,dispatch_lag_ms,http_status,success,error,warmup\n";
     output << std::fixed << std::setprecision(3);
     for (std::size_t index = 0; index < records.size(); ++index) {
         const auto& record = records[index];
@@ -55,7 +56,7 @@ void write_records_csv(std::ostream& output, const std::vector<RequestTimestamps
         }
         output << ',' << (record.result.success ? "true" : "false") << ',';
         write_csv_field(output, record.result.error);
-        output << '\n';
+        output << ',' << (record.request_index < warmup_count ? "true" : "false") << '\n';
     }
 
     output.flags(original_flags);
@@ -65,13 +66,14 @@ void write_records_csv(std::ostream& output, const std::vector<RequestTimestamps
     }
 }
 
-void export_records_csv(const std::string& output_path, const std::vector<RequestTimestamps>& records)
+void export_records_csv(const std::string& output_path, const std::vector<RequestTimestamps>& records,
+                        std::size_t warmup_count)
 {
     std::ofstream output(output_path);
     if (!output) {
         throw std::runtime_error("could not open CSV output file: " + output_path);
     }
-    write_records_csv(output, records);
+    write_records_csv(output, records, warmup_count);
     output.flush();
     if (!output) {
         throw std::runtime_error("failed to write CSV output file: " + output_path);

@@ -76,12 +76,14 @@ if(INFERSERVE_BUILD_SERVER)
 endif()
 
 add_executable(inferserve_load_generator
+    src/load_generator/benchmark_metadata.cpp
     src/load_generator/closed_loop_executor.cpp
     src/load_generator/csv_export.cpp
     src/load_generator/dispatch_lag.cpp
     src/load_generator/http_transport.cpp
     src/load_generator/main.cpp
     src/load_generator/open_loop_executor.cpp
+    src/load_generator/performance_stats.cpp
     src/load_generator/traffic_pattern.cpp
 )
 target_include_directories(inferserve_load_generator PRIVATE src/load_generator)
@@ -94,6 +96,18 @@ include(CTest)
 
 if(BUILD_TESTING)
     include(FetchContent)
+
+    find_package(Python3 REQUIRED COMPONENTS Interpreter)
+    add_test(
+        NAME python_benchmark_plot_tests
+        COMMAND ${Python3_EXECUTABLE} -m unittest tests/test_plot_benchmark_results.py
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    )
+    add_test(
+        NAME python_experiment_runner_tests
+        COMMAND ${Python3_EXECUTABLE} -m unittest tests/test_run_experiment.py
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    )
 
     set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
     set(BUILD_GMOCK OFF CACHE BOOL "" FORCE)
@@ -110,6 +124,7 @@ if(BUILD_TESTING)
         add_executable(inferserve_tests
             tests/smoke_test.cpp
             tests/http_server_test.cpp
+            tests/runtime_metrics_test.cpp
             src/http_server.cpp
             src/server_runtime.cpp
         )
@@ -128,17 +143,21 @@ if(BUILD_TESTING)
     endif()
 
     add_executable(inferserve_load_generator_tests
+        tests/load_generator_benchmark_metadata_test.cpp
         tests/load_generator_closed_loop_test.cpp
         tests/load_generator_csv_export_test.cpp
         tests/load_generator_dispatch_lag_test.cpp
         tests/load_generator_http_transport_test.cpp
         tests/load_generator_open_loop_test.cpp
+        tests/load_generator_performance_stats_test.cpp
         tests/load_generator_traffic_pattern_test.cpp
+        src/load_generator/benchmark_metadata.cpp
         src/load_generator/closed_loop_executor.cpp
         src/load_generator/csv_export.cpp
         src/load_generator/dispatch_lag.cpp
         src/load_generator/http_transport.cpp
         src/load_generator/open_loop_executor.cpp
+        src/load_generator/performance_stats.cpp
         src/load_generator/traffic_pattern.cpp
         src/http_server.cpp
         src/server_runtime.cpp

@@ -19,7 +19,8 @@ struct DispatchLagStatistics {
 };
 
 [[nodiscard]] std::vector<RequestDispatchLag> calculate_dispatch_lags(
-    const std::vector<RequestTimestamps>& records);
+    const std::vector<RequestTimestamps>& records,
+    std::size_t warmup_count = 0);
 [[nodiscard]] DispatchLagStatistics summarize_dispatch_lags(const std::vector<RequestDispatchLag>& dispatch_lags);
 
 }  // namespace inferserve::load_generator

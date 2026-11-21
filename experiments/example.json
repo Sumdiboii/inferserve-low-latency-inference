@@ -1,0 +1,18 @@
+{
+  "load_generator": "../build/debug/inferserve_load_generator",
+  "output_dir": "../experiment-results",
+  "runs": [
+    {
+      "name": "burst-10",
+      "pattern": "burst",
+      "count": 10,
+      "warmup_count": 2
+    },
+    {
+      "name": "fixed-rate-10-at-5",
+      "pattern": "fixed-rate",
+      "count": 10,
+      "rate": 5
+    }
+  ]
+}
