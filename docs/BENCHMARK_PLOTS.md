@@ -18,6 +18,11 @@ UTC start time, compiler, C++ standard, and OS. `backend_identity` and
 `server_configuration` are `null` because the client cannot reliably discover
 them; null rate, seed, concurrency, or destination values mean not applicable or
 not configured for that run.
+The sidecar also records CPU architecture and model, logical CPU count, process
+CPU affinity, kernel version, system load at the start and end of the run,
+and cgroup CPU quota/period/limit where available on Linux. Affinity applies only
+to the load generator process. CPU and load fields are `null` when collection is
+not reliable; no CPU pinning or load-based rejection is performed.
 
 The script uses only the Python standard library. It writes `latency_percentiles.svg`
 (p50, p95, and p99 scheduled-arrival-to-completion latency in milliseconds) and

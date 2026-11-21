@@ -21,6 +21,9 @@ port. An optional `warmup_count` marks that many leading requests as warmup;
 it defaults to `0` and must be less than `count`. Warmup requests execute as
 part of the same load-generator invocation and are excluded from measured
 statistics and plots, but remain in the CSV.
+The metadata sidecar records available Linux environment details such as CPU
+architecture/model, logical CPU count, load-generator CPU affinity, kernel
+version, start/end load averages, and cgroup CPU limit.
 Use `--load-generator` or `--output-dir` to override the executable or output
 location for one invocation.
 

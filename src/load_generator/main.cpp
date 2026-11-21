@@ -209,6 +209,7 @@ int main(int argc, char* argv[])
             metadata.http_host = std::string(options.http_host);
             metadata.http_port = options.http_port;
         }
+        inferserve::load_generator::collect_benchmark_environment_start(metadata);
 
         const auto run_started = std::chrono::steady_clock::now();
         if (closed_loop) {
@@ -216,6 +217,7 @@ int main(int argc, char* argv[])
         } else {
             records = inferserve::load_generator::execute_open_loop_with_results(arrivals, execute_request);
         }
+        inferserve::load_generator::collect_benchmark_environment_end(metadata);
         metadata.duration_seconds =
             std::chrono::duration<double>(std::chrono::steady_clock::now() - run_started).count();
 
