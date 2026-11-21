@@ -16,7 +16,10 @@
 #include <cstdint>
 #include <mutex>
 #include <string_view>
+#include <sys/socket.h>
+#include <netinet/in.h>
 #include <thread>
+#include <unistd.h>
 #include <vector>
 
 namespace {
@@ -109,6 +112,45 @@ TEST(HttpTransport, RecordsConnectionFailure)
     EXPECT_FALSE(result.success);
     EXPECT_EQ(result.http_status, 0);
     EXPECT_NE(result.error.find("could not connect to HTTP server"), std::string::npos);
+}
+
+TEST(HttpTransport, TimesOutWhenServerDoesNotRespond)
+{
+    const int listener = ::socket(AF_INET, SOCK_STREAM, 0);
+    ASSERT_GE(listener, 0);
+
+    sockaddr_in address{};
+    address.sin_family = AF_INET;
+    address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    address.sin_port = 0;
+    ASSERT_EQ(::bind(listener, reinterpret_cast<const sockaddr*>(&address), sizeof(address)), 0);
+    ASSERT_EQ(::listen(listener, 1), 0);
+
+    socklen_t address_length = sizeof(address);
+    ASSERT_EQ(::getsockname(listener, reinterpret_cast<sockaddr*>(&address), &address_length), 0);
+    const auto port = ntohs(address.sin_port);
+
+    std::thread server([listener] {
+        const int client = ::accept(listener, nullptr, nullptr);
+        if (client >= 0) {
+            char buffer[256];
+            while (::recv(client, buffer, sizeof(buffer), 0) > 0) {
+            }
+            ::close(client);
+        }
+        ::close(listener);
+    });
+
+    const auto started = std::chrono::steady_clock::now();
+    const auto result = inferserve::load_generator::send_infer_request("127.0.0.1", port);
+    const auto elapsed = std::chrono::steady_clock::now() - started;
+    server.join();
+
+    EXPECT_FALSE(result.success);
+    EXPECT_EQ(result.http_status, 0);
+    EXPECT_NE(result.error.find("timed out waiting for HTTP response"), std::string::npos);
+    EXPECT_GE(elapsed, std::chrono::seconds(1));
+    EXPECT_LT(elapsed, std::chrono::seconds(5));
 }
 
 }  // namespace

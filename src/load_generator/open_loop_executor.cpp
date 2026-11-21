@@ -13,6 +13,7 @@ namespace inferserve::load_generator {
 namespace {
 
 constexpr std::size_t kOpenLoopWorkerCount = 4;
+constexpr std::size_t kPendingRequestCapacity = 1024;
 
 struct ScheduledRequest {
     std::size_t index;
@@ -90,11 +91,22 @@ std::vector<RequestTimestamps> execute_open_loop_with_results(
                 std::chrono::duration<double>(scheduled_seconds));
             const auto scheduled_arrival = schedule_start + offset;
             std::this_thread::sleep_until(scheduled_arrival);
+            bool queued = false;
             {
                 std::lock_guard lock(queue_mutex);
-                pending_requests.push_back({index, scheduled_seconds, scheduled_arrival});
+                if (pending_requests.size() < kPendingRequestCapacity) {
+                    pending_requests.push_back({index, scheduled_seconds, scheduled_arrival});
+                    queued = true;
+                }
             }
-            request_available.notify_one();
+            if (queued) {
+                request_available.notify_one();
+            } else {
+                const auto dispatch_attempt = Clock::now();
+                records[index] = RequestTimestamps{
+                    index, schedule_start, scheduled_arrival, dispatch_attempt, dispatch_attempt,
+                    RequestResult{false, 0, "request not dispatched: pending queue is full"}};
+            }
         }
     } catch (...) {
         scheduling_error = std::current_exception();

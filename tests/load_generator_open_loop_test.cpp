@@ -14,6 +14,7 @@ namespace {
 
 using namespace std::chrono_literals;
 using inferserve::load_generator::execute_open_loop;
+using inferserve::load_generator::execute_open_loop_with_results;
 using inferserve::load_generator::RequestTimestamps;
 
 TEST(OpenLoopExecutor, LaterArrivalStartsWhileEarlierExecutionIsStillBlocked)
@@ -88,6 +89,53 @@ TEST(OpenLoopExecutor, UsesBoundedWorkersForManySimultaneousArrivals)
     EXPECT_TRUE(worker_limit_reached);
     EXPECT_EQ(maximum_active_callbacks, 4U);
     EXPECT_EQ(callback_threads.size(), 4U);
+}
+
+TEST(OpenLoopExecutor, BoundsPendingQueueAndRecordsUndispatchedArrivals)
+{
+    constexpr std::size_t request_count = 1200;
+    std::mutex mutex;
+    std::condition_variable condition;
+    std::size_t active_callbacks = 0;
+    bool release_callbacks = false;
+    std::vector<double> arrivals(request_count, 0.0);
+    std::vector<inferserve::load_generator::RequestTimestamps> records;
+
+    std::thread scheduler([&] {
+        records = execute_open_loop_with_results(arrivals, [&](std::size_t, double) {
+            std::unique_lock lock(mutex);
+            ++active_callbacks;
+            condition.notify_all();
+            condition.wait(lock, [&] { return release_callbacks; });
+            return inferserve::load_generator::RequestResult{};
+        });
+    });
+
+    bool all_workers_started = false;
+    {
+        std::unique_lock lock(mutex);
+        all_workers_started = condition.wait_for(lock, std::chrono::seconds(1), [&] { return active_callbacks == 4; });
+        if (all_workers_started) {
+            condition.wait_for(lock, std::chrono::milliseconds(100), [] { return false; });
+        }
+        release_callbacks = true;
+        condition.notify_all();
+    }
+    scheduler.join();
+
+    ASSERT_TRUE(all_workers_started);
+    ASSERT_EQ(records.size(), request_count);
+    std::size_t undispatched_count = 0;
+    for (std::size_t index = 0; index < records.size(); ++index) {
+        EXPECT_EQ(records[index].request_index, index);
+        EXPECT_LE(records[index].scheduled_arrival, records[index].actual_send);
+        EXPECT_LE(records[index].actual_send, records[index].completion);
+        if (!records[index].result.success) {
+            ++undispatched_count;
+            EXPECT_NE(records[index].result.error.find("pending queue is full"), std::string::npos);
+        }
+    }
+    EXPECT_GT(undispatched_count, 0U);
 }
 
 TEST(OpenLoopExecutor, RecordsOrderedRequestTimestampsAroundCallbackExecution)
