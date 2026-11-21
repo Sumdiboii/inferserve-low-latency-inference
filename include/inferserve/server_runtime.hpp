@@ -10,6 +10,7 @@
 #include <inferserve/batch_worker_pool.hpp>
 #include <inferserve/http_server.hpp>
 #include <inferserve/request_admission.hpp>
+#include <inferserve/runtime_metrics.hpp>
 
 namespace inferserve {
 
@@ -22,12 +23,14 @@ public:
     ServerRuntime& operator=(const ServerRuntime&) = delete;
 
     [[nodiscard]] std::uint16_t port() const noexcept { return server_.port(); }
+    [[nodiscard]] RuntimeMetricsSnapshot metrics() const { return metrics_.snapshot(); }
     void run(const volatile std::sig_atomic_t* shutdown_requested = nullptr);
 
 private:
     void stop_processing() noexcept;
 
-    RequestAdmission admission_{1024};
+    RuntimeMetrics metrics_;
+    RequestAdmission admission_{1024, &metrics_};
     BatchDispatchQueue dispatch_queue_{1024};
     Backend& backend_;
     HttpServer server_;

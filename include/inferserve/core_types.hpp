@@ -60,6 +60,7 @@ struct Request {
     Data input;
     TimePoint arrival;
     std::optional<TimePoint> enqueued;
+    std::optional<TimePoint> dequeued;
     std::optional<TimePoint> batch_formed;
     std::optional<TimePoint> exec_start;
     std::optional<TimePoint> exec_end;

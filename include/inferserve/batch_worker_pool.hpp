@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <cstddef>
 #include <mutex>
 #include <optional>
@@ -10,13 +11,18 @@
 #include <inferserve/backend.hpp>
 #include <inferserve/batch_dispatch_queue.hpp>
 #include <inferserve/core_types.hpp>
+#include <inferserve/runtime_metrics.hpp>
 
 namespace inferserve {
 
 class BatchWorkerPool {
 public:
-    BatchWorkerPool(BatchDispatchQueue& dispatch_queue, Backend& backend, std::size_t worker_count)
-        : dispatch_queue_(dispatch_queue), backend_(backend), worker_count_(worker_count)
+    BatchWorkerPool(
+        BatchDispatchQueue& dispatch_queue,
+        Backend& backend,
+        std::size_t worker_count,
+        RuntimeMetrics* metrics = nullptr)
+        : dispatch_queue_(dispatch_queue), backend_(backend), worker_count_(worker_count), metrics_(metrics)
     {
         if (worker_count_ == 0) {
             throw std::invalid_argument("worker count must be positive");
@@ -93,7 +99,7 @@ private:
 
             try {
                 const InferenceResults results = backend_.infer(inputs);
-                record_exec_end(*batch);
+                record_exec_end(*batch, exec_start);
                 if (results.size() != batch->size()) {
                     complete_with_error(*batch);
                     continue;
@@ -105,17 +111,21 @@ private:
                         Response((*batch)[index].id, Status::Success, results[index]));
                 }
             } catch (...) {
-                record_exec_end(*batch);
+                record_exec_end(*batch, exec_start);
                 complete_with_error(*batch);
             }
         }
     }
 
-    void record_exec_end(BatchDispatchQueue::RequestBatch& batch)
+    void record_exec_end(BatchDispatchQueue::RequestBatch& batch, TimePoint exec_start)
     {
         const TimePoint exec_end = clock_.now();
         for (Request& request : batch) {
             request.exec_end = exec_end;
+        }
+        if (metrics_ != nullptr) {
+            metrics_->record_execution(
+                std::chrono::duration_cast<std::chrono::nanoseconds>(exec_end - exec_start));
         }
     }
 
@@ -130,6 +140,7 @@ private:
     BatchDispatchQueue& dispatch_queue_;
     Backend& backend_;
     const std::size_t worker_count_;
+    RuntimeMetrics* metrics_;
     MonotonicClock clock_;
     std::vector<std::thread> workers_;
     std::mutex lifecycle_mutex_;

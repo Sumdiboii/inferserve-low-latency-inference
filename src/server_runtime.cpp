@@ -4,6 +4,7 @@
 #include <inferserve/batch_worker_pool.hpp>
 
 #include <algorithm>
+#include <chrono>
 #include <cstddef>
 #include <stdexcept>
 
@@ -28,8 +29,9 @@ void ServerRuntime::run(const volatile std::sig_atomic_t* shutdown_requested)
 
     backend_.load();
     const std::size_t max_batch_size = std::min(backend_.max_batch_size(), kRuntimeMaxBatchSize);
-    batcher_ = std::make_unique<Batcher>(admission_, dispatch_queue_, max_batch_size);
-    workers_ = std::make_unique<BatchWorkerPool>(dispatch_queue_, backend_, 1);
+    batcher_ = std::make_unique<Batcher>(admission_, dispatch_queue_, max_batch_size,
+                                         std::chrono::milliseconds::zero(), &metrics_);
+    workers_ = std::make_unique<BatchWorkerPool>(dispatch_queue_, backend_, 1, &metrics_);
     workers_->start();
     workers_started_ = true;
 

@@ -110,6 +110,7 @@ if(BUILD_TESTING)
         add_executable(inferserve_tests
             tests/smoke_test.cpp
             tests/http_server_test.cpp
+            tests/runtime_metrics_test.cpp
             src/http_server.cpp
             src/server_runtime.cpp
         )
