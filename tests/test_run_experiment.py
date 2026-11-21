@@ -4,7 +4,11 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from scripts.run_experiment import build_load_generator_command, run_experiment
+from scripts.run_experiment import (
+    aggregate_configuration,
+    build_load_generator_command,
+    run_experiment,
+)
 
 
 class ExperimentRunnerTest(unittest.TestCase):
@@ -24,7 +28,12 @@ if "fail-run" in str(csv_path):
     raise SystemExit(7)
 
 csv_path.parent.mkdir(parents=True, exist_ok=True)
-csv_path.write_text("request_index,error\\n0,\\n", encoding="utf-8")
+csv_path.write_text(
+    "request_index,scheduled_arrival_ms,completion_ms,error,warmup\\n"
+    "0,0,10,,false\\n"
+    "1,100,120,,false\\n",
+    encoding="utf-8",
+)
 Path(str(csv_path) + ".metadata.json").write_text(
     '{"traffic_pattern": "burst"}\\n',
     encoding="utf-8",
@@ -55,14 +64,19 @@ Path(str(csv_path) + ".metadata.json").write_text(
             results, all_succeeded = run_experiment(config)
 
             self.assertFalse(all_succeeded)
-            self.assertEqual([result["status"] for result in results],
-                             ["succeeded", "succeeded", "failed"])
-            self.assertEqual(results[2]["exit_code"], 7)
-            self.assertIn("intentional load-generator failure", results[2]["detail"])
+            self.assertEqual(
+                [result["status"] for result in results],
+                ["succeeded", "succeeded", "succeeded",
+                 "succeeded", "succeeded", "succeeded",
+                 "failed", "failed", "failed"],
+            )
+            self.assertEqual(results[6]["exit_code"], 7)
+            self.assertIn("intentional load-generator failure", results[6]["detail"])
             for name in ("burst-one", "fixed-two"):
-                run_dir = root / "results" / name
-                self.assertTrue((run_dir / "requests.csv").is_file())
-                self.assertTrue((run_dir / "requests.csv.metadata.json").is_file())
+                for repetition in range(1, 4):
+                    run_dir = root / "results" / name / f"run-{repetition}"
+                    self.assertTrue((run_dir / "requests.csv").is_file())
+                    self.assertTrue((run_dir / "requests.csv.metadata.json").is_file())
 
     def test_success_without_artifacts_is_failed(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -99,7 +113,7 @@ Path(str(csv_path) + ".metadata.json").write_text(
                 }),
                 encoding="utf-8",
             )
-            run_dir = root / "results" / "stale-artifacts"
+            run_dir = root / "results" / "stale-artifacts" / "run-1"
             run_dir.mkdir(parents=True)
             (run_dir / "requests.csv").write_text("old csv\n", encoding="utf-8")
             (run_dir / "requests.csv.metadata.json").write_text("old metadata\n", encoding="utf-8")
@@ -135,10 +149,178 @@ Path(str(csv_path) + ".metadata.json").write_text(
             results, all_succeeded = run_experiment(config)
 
             self.assertFalse(all_succeeded)
-            self.assertEqual([result["status"] for result in results], ["failed", "succeeded"])
+            self.assertEqual(
+                [result["status"] for result in results],
+                ["failed", "failed", "failed", "succeeded", "succeeded", "succeeded"],
+            )
             self.assertTrue(results[0]["detail"])
-            self.assertTrue((output_dir / "later-run" / "requests.csv").is_file())
-            self.assertTrue((output_dir / "later-run" / "requests.csv.metadata.json").is_file())
+            for repetition in range(1, 4):
+                run_dir = output_dir / "later-run" / f"run-{repetition}"
+                self.assertTrue((run_dir / "requests.csv").is_file())
+                self.assertTrue((run_dir / "requests.csv.metadata.json").is_file())
+
+    def test_aggregates_three_successful_runs_as_median_min_max(self):
+        run_results = [
+            {
+                "status": "succeeded",
+                "latency_percentiles": {"p50": 10.0, "p95": 20.0, "p99": 30.0},
+                "throughput_requests_per_second": 100.0,
+            },
+            {
+                "status": "succeeded",
+                "latency_percentiles": {"p50": 20.0, "p95": 30.0, "p99": 40.0},
+                "throughput_requests_per_second": 120.0,
+            },
+            {
+                "status": "succeeded",
+                "latency_percentiles": {"p50": 15.0, "p95": 25.0, "p99": 35.0},
+                "throughput_requests_per_second": 110.0,
+            },
+        ]
+
+        summary = aggregate_configuration("three-runs", run_results)
+
+        self.assertEqual(summary["status"], "complete")
+        self.assertEqual(summary["successful_runs"], 3)
+        self.assertEqual(summary["aggregate"]["latency_ms"]["p50"], {
+            "median": 15.0,
+            "minimum": 10.0,
+            "maximum": 20.0,
+            "sample_count": 3,
+        })
+        self.assertEqual(summary["aggregate"]["throughput_requests_per_second"], {
+            "median": 110.0,
+            "minimum": 100.0,
+            "maximum": 120.0,
+            "sample_count": 3,
+        })
+
+    def test_incomplete_aggregation_uses_only_successful_runs(self):
+        run_results = [
+            {
+                "status": "succeeded",
+                "latency_percentiles": {"p50": 10.0, "p95": 20.0, "p99": 30.0},
+                "throughput_requests_per_second": 100.0,
+            },
+            {"status": "failed", "latency_percentiles": {}, "throughput_requests_per_second": None},
+            {
+                "status": "succeeded",
+                "latency_percentiles": {"p50": 30.0, "p95": 40.0, "p99": 50.0},
+                "throughput_requests_per_second": 140.0,
+            },
+        ]
+
+        summary = aggregate_configuration("two-success", run_results)
+
+        self.assertEqual(summary["status"], "incomplete")
+        self.assertEqual(summary["successful_runs"], 2)
+        self.assertEqual(summary["aggregate"]["latency_ms"]["p50"]["median"], 20.0)
+        self.assertEqual(summary["aggregate"]["throughput_requests_per_second"]["median"], 120.0)
+
+    def test_machine_summary_artifact_is_written(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            executable = self.make_fake_load_generator(root)
+            config = root / "experiment.json"
+            config.write_text(
+                json.dumps({
+                    "load_generator": executable.name,
+                    "output_dir": "results",
+                    "runs": [{"name": "summary-run", "pattern": "burst", "count": 3}],
+                }),
+                encoding="utf-8",
+            )
+
+            _, all_succeeded = run_experiment(config)
+
+            self.assertTrue(all_succeeded)
+            summary_path = root / "results" / "experiment-summary.json"
+            summary = json.loads(summary_path.read_text(encoding="utf-8"))
+            self.assertEqual(summary["status"], "complete")
+            self.assertEqual(summary["successful_runs"], 3)
+            self.assertEqual(summary["configurations"][0]["status"], "complete")
+
+    def test_header_only_csv_is_marked_failed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            executable = root / "fake.py"
+            executable.write_text(
+                """#!/usr/bin/env python3
+import sys
+from pathlib import Path
+args = sys.argv[1:]
+csv_path = Path(args[args.index("--csv") + 1])
+csv_path.parent.mkdir(parents=True, exist_ok=True)
+csv_path.write_text(
+    "request_index,scheduled_arrival_ms,completion_ms,error,warmup\\n",
+    encoding="utf-8",
+)
+Path(str(csv_path) + ".metadata.json").write_text(
+    '{"traffic_pattern": "burst"}\\n',
+    encoding="utf-8",
+)
+""",
+                encoding="utf-8",
+            )
+            executable.chmod(executable.stat().st_mode | 0o111)
+            config = root / "experiment.json"
+            config.write_text(
+                json.dumps({
+                    "load_generator": executable.name,
+                    "output_dir": "results",
+                    "runs": [{"name": "header-only", "pattern": "burst", "count": 1}],
+                }),
+                encoding="utf-8",
+            )
+
+            results, all_succeeded = run_experiment(config)
+
+            self.assertFalse(all_succeeded)
+            self.assertEqual([result["status"] for result in results], ["failed"] * 3)
+            self.assertIn("CSV contains no request records", results[0]["detail"])
+            summary = json.loads((root / "results" / "experiment-summary.json").read_text(encoding="utf-8"))
+            self.assertEqual(summary["status"], "incomplete")
+            self.assertEqual(summary["configurations"][0]["successful_runs"], 0)
+
+    def test_malformed_metadata_json_is_marked_failed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            executable = root / "fake.py"
+            executable.write_text(
+                """#!/usr/bin/env python3
+import sys
+from pathlib import Path
+args = sys.argv[1:]
+csv_path = Path(args[args.index("--csv") + 1])
+csv_path.parent.mkdir(parents=True, exist_ok=True)
+csv_path.write_text(
+    "request_index,scheduled_arrival_ms,completion_ms,error,warmup\\n"
+    "0,0,10,,false\\n",
+    encoding="utf-8",
+)
+Path(str(csv_path) + ".metadata.json").write_text("{not-json\\n", encoding="utf-8")
+""",
+                encoding="utf-8",
+            )
+            executable.chmod(executable.stat().st_mode | 0o111)
+            config = root / "experiment.json"
+            config.write_text(
+                json.dumps({
+                    "load_generator": executable.name,
+                    "output_dir": "results",
+                    "runs": [{"name": "bad-metadata", "pattern": "burst", "count": 1}],
+                }),
+                encoding="utf-8",
+            )
+
+            results, all_succeeded = run_experiment(config)
+
+            self.assertFalse(all_succeeded)
+            self.assertEqual([result["status"] for result in results], ["failed"] * 3)
+            self.assertIn("invalid successful run artifacts", results[0]["detail"])
+            summary = json.loads((root / "results" / "experiment-summary.json").read_text(encoding="utf-8"))
+            self.assertEqual(summary["status"], "incomplete")
+            self.assertEqual(summary["configurations"][0]["successful_runs"], 0)
 
     def test_build_command_supports_all_existing_patterns(self):
         load_generator = Path("/tmp/inferserve_load_generator")

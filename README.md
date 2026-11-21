@@ -24,6 +24,11 @@ statistics and plots, but remain in the CSV.
 The metadata sidecar records available Linux environment details such as CPU
 architecture/model, logical CPU count, load-generator CPU affinity, kernel
 version, start/end load averages, and cgroup CPU limit.
+Each named configuration is executed exactly three times. Individual results
+are preserved under `experiment-results/<run-name>/run-1` through `run-3`, and
+`experiment-results/experiment-summary.json` contains median, minimum, and
+maximum latency percentiles and throughput across successful runs. A summary
+is marked incomplete when fewer than three runs succeed.
 Use `--load-generator` or `--output-dir` to override the executable or output
 location for one invocation.
 
