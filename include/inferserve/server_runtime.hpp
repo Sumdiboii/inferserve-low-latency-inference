@@ -2,6 +2,7 @@
 
 #include <csignal>
 #include <cstdint>
+#include <chrono>
 #include <memory>
 
 #include <inferserve/backend.hpp>
@@ -11,6 +12,7 @@
 #include <inferserve/http_server.hpp>
 #include <inferserve/request_admission.hpp>
 #include <inferserve/runtime_metrics.hpp>
+#include <inferserve/completion_registry.hpp>
 
 namespace inferserve {
 
@@ -30,7 +32,8 @@ private:
     void stop_processing() noexcept;
 
     RuntimeMetrics metrics_;
-    RequestAdmission admission_{1024, &metrics_};
+    CompletionRegistry completion_registry_{4096, std::chrono::minutes(5)};
+    RequestAdmission admission_{1024, &metrics_, &completion_registry_};
     BatchDispatchQueue dispatch_queue_{1024};
     Backend& backend_;
     HttpServer server_;

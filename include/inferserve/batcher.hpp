@@ -14,6 +14,7 @@
 #include <inferserve/core_types.hpp>
 #include <inferserve/request_admission.hpp>
 #include <inferserve/runtime_metrics.hpp>
+#include <inferserve/completion_registry.hpp>
 
 namespace inferserve {
 
@@ -26,12 +27,14 @@ public:
             Backend& backend,
             std::size_t max_batch_size,
             std::chrono::milliseconds max_batch_delay = std::chrono::milliseconds::zero(),
-            RuntimeMetrics* metrics = nullptr)
+            RuntimeMetrics* metrics = nullptr,
+            CompletionRegistry* completion_registry = nullptr)
         : admission_(admission),
           backend_(&backend),
           max_batch_size_(max_batch_size),
           max_batch_delay_(max_batch_delay),
-          metrics_(metrics)
+          metrics_(metrics),
+          completion_registry_(completion_registry)
     {
         validate_configuration();
     }
@@ -40,12 +43,14 @@ public:
             Backend& backend,
             std::size_t max_batch_size,
             BatchCallback callback,
-            std::chrono::milliseconds max_batch_delay = std::chrono::milliseconds::zero())
+            std::chrono::milliseconds max_batch_delay = std::chrono::milliseconds::zero(),
+            CompletionRegistry* completion_registry = nullptr)
         : admission_(admission),
           backend_(&backend),
           max_batch_size_(max_batch_size),
           callback_(std::move(callback)),
-          max_batch_delay_(max_batch_delay)
+          max_batch_delay_(max_batch_delay),
+          completion_registry_(completion_registry)
     {
         validate_configuration();
     }
@@ -70,13 +75,15 @@ public:
             BatchDispatchQueue& dispatch_queue,
             std::size_t max_batch_size,
             std::chrono::milliseconds max_batch_delay = std::chrono::milliseconds::zero(),
-            RuntimeMetrics* metrics = nullptr)
+            RuntimeMetrics* metrics = nullptr,
+            CompletionRegistry* completion_registry = nullptr)
         : admission_(admission),
           backend_(nullptr),
           max_batch_size_(max_batch_size),
           dispatch_queue_(&dispatch_queue),
           max_batch_delay_(max_batch_delay),
-          metrics_(metrics)
+          metrics_(metrics),
+          completion_registry_(completion_registry)
     {
         validate_configuration();
     }
@@ -235,6 +242,9 @@ private:
             for (std::size_t index = 0; index < batch.size(); ++index) {
                 batch[index].completed = clock_.now();
                 batch[index].complete(Response(batch[index].id, Status::Success, results[index]));
+                if (completion_registry_ != nullptr) {
+                    completion_registry_->record_terminal(batch[index].id, Status::Success);
+                }
             }
             notify_batch(batch);
         } catch (...) {
@@ -277,6 +287,15 @@ private:
         for (Request& request : batch) {
             request.completed = clock_.now();
             request.complete(Response(request.id, status));
+            if (completion_registry_ != nullptr) {
+                completion_registry_->record_terminal(
+                    request.id,
+                    status,
+                    status == Status::QueueFull ? "queue full"
+                                                : status == Status::InternalError
+                                                      ? "internal dispatch error"
+                                                      : "backend error");
+            }
         }
     }
 
@@ -287,6 +306,7 @@ private:
     BatchDispatchQueue* dispatch_queue_ = nullptr;
     const std::chrono::milliseconds max_batch_delay_;
     RuntimeMetrics* metrics_ = nullptr;
+    CompletionRegistry* completion_registry_ = nullptr;
     MonotonicClock clock_;
     std::optional<Request> pending_request_;
     bool started_ = false;

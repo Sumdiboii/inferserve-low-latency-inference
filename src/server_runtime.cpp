@@ -30,8 +30,10 @@ void ServerRuntime::run(const volatile std::sig_atomic_t* shutdown_requested)
     backend_.load();
     const std::size_t max_batch_size = std::min(backend_.max_batch_size(), kRuntimeMaxBatchSize);
     batcher_ = std::make_unique<Batcher>(admission_, dispatch_queue_, max_batch_size,
-                                         std::chrono::milliseconds::zero(), &metrics_);
-    workers_ = std::make_unique<BatchWorkerPool>(dispatch_queue_, backend_, 1, &metrics_);
+                                         std::chrono::milliseconds::zero(), &metrics_,
+                                         &completion_registry_);
+    workers_ = std::make_unique<BatchWorkerPool>(
+        dispatch_queue_, backend_, 1, &metrics_, &completion_registry_);
     workers_->start();
     workers_started_ = true;
 

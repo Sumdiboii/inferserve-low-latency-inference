@@ -12,6 +12,7 @@
 #include <inferserve/batch_dispatch_queue.hpp>
 #include <inferserve/core_types.hpp>
 #include <inferserve/runtime_metrics.hpp>
+#include <inferserve/completion_registry.hpp>
 
 namespace inferserve {
 
@@ -21,8 +22,10 @@ public:
         BatchDispatchQueue& dispatch_queue,
         Backend& backend,
         std::size_t worker_count,
-        RuntimeMetrics* metrics = nullptr)
-        : dispatch_queue_(dispatch_queue), backend_(backend), worker_count_(worker_count), metrics_(metrics)
+        RuntimeMetrics* metrics = nullptr,
+        CompletionRegistry* completion_registry = nullptr)
+        : dispatch_queue_(dispatch_queue), backend_(backend), worker_count_(worker_count),
+          metrics_(metrics), completion_registry_(completion_registry)
     {
         if (worker_count_ == 0) {
             throw std::invalid_argument("worker count must be positive");
@@ -109,6 +112,9 @@ private:
                     (*batch)[index].completed = clock_.now();
                     (*batch)[index].complete(
                         Response((*batch)[index].id, Status::Success, results[index]));
+                    if (completion_registry_ != nullptr) {
+                        completion_registry_->record_terminal((*batch)[index].id, Status::Success);
+                    }
                 }
             } catch (...) {
                 record_exec_end(*batch, exec_start);
@@ -134,6 +140,10 @@ private:
         for (Request& request : batch) {
             request.completed = clock_.now();
             request.complete(Response(request.id, Status::BackendError));
+            if (completion_registry_ != nullptr) {
+                completion_registry_->record_terminal(
+                    request.id, Status::BackendError, "backend error");
+            }
         }
     }
 
@@ -141,6 +151,7 @@ private:
     Backend& backend_;
     const std::size_t worker_count_;
     RuntimeMetrics* metrics_;
+    CompletionRegistry* completion_registry_;
     MonotonicClock clock_;
     std::vector<std::thread> workers_;
     std::mutex lifecycle_mutex_;

@@ -7,14 +7,16 @@
 
 #include <inferserve/bounded_queue.hpp>
 #include <inferserve/core_types.hpp>
+#include <inferserve/completion_registry.hpp>
 #include <inferserve/runtime_metrics.hpp>
 
 namespace inferserve {
 
 class RequestAdmission {
 public:
-    explicit RequestAdmission(std::size_t capacity, RuntimeMetrics* metrics = nullptr)
-        : queue_(capacity), metrics_(metrics)
+    explicit RequestAdmission(std::size_t capacity, RuntimeMetrics* metrics = nullptr,
+                              CompletionRegistry* completion_registry = nullptr)
+        : queue_(capacity), metrics_(metrics), completion_registry_(completion_registry)
     {
     }
 
@@ -23,10 +25,16 @@ public:
         const Status validation_status = validate_request(request);
         if (validation_status != Status::Success) {
             record_rejection();
+            if (completion_registry_ != nullptr) {
+                completion_registry_->record_terminal(request.id, validation_status, "invalid input");
+            }
             request.complete(Response(request.id, validation_status));
             return validation_status;
         }
 
+        if (completion_registry_ != nullptr) {
+            completion_registry_->record_pending(request.id);
+        }
         request.enqueued = MonotonicClock{}.now();
         const auto push_result = queue_.try_push_result(std::move(request));
         if (push_result != BoundedQueue<Request>::PushResult::Pushed) {
@@ -35,6 +43,12 @@ public:
                 ? Status::QueueFull
                 : Status::ShuttingDown;
             record_rejection();
+            if (completion_registry_ != nullptr) {
+                completion_registry_->record_terminal(
+                    request.id,
+                    rejection_status,
+                    rejection_status == Status::QueueFull ? "queue full" : "server shutting down");
+            }
             request.complete(Response(request.id, rejection_status));
             return rejection_status;
         }
@@ -63,6 +77,7 @@ private:
 
     BoundedQueue<Request> queue_;
     RuntimeMetrics* metrics_;
+    CompletionRegistry* completion_registry_;
 };
 
 }  // namespace inferserve

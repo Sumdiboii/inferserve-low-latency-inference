@@ -37,6 +37,7 @@ if(INFERSERVE_BUILD_SERVER)
         src/http_server.cpp
         src/server_runtime.cpp
         src/server_options.cpp
+        src/completion_registry.cpp
     )
     set_target_properties(inferserve PROPERTIES
         CXX_STANDARD 20
@@ -127,9 +128,11 @@ if(BUILD_TESTING)
             tests/http_server_test.cpp
             tests/runtime_metrics_test.cpp
             tests/server_options_test.cpp
+            tests/completion_registry_test.cpp
             src/http_server.cpp
             src/server_runtime.cpp
             src/server_options.cpp
+            src/completion_registry.cpp
         )
         target_include_directories(inferserve_tests PRIVATE include)
         target_link_libraries(inferserve_tests PRIVATE
@@ -154,6 +157,7 @@ if(BUILD_TESTING)
         tests/load_generator_open_loop_test.cpp
         tests/load_generator_performance_stats_test.cpp
         tests/load_generator_traffic_pattern_test.cpp
+        src/completion_registry.cpp
         src/load_generator/benchmark_metadata.cpp
         src/load_generator/closed_loop_executor.cpp
         src/load_generator/csv_export.cpp
