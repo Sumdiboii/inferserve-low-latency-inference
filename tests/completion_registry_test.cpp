@@ -52,6 +52,38 @@ TEST(CompletionRegistry, KeepsPendingRequestsWhenTerminalCapacityIsFull)
     EXPECT_EQ(terminal->state, CompletionState::Terminal);
 }
 
+TEST(CompletionRegistry, PendingTransitionRemovesStaleTerminalOrderEntry)
+{
+    CompletionRegistry registry(2, std::chrono::minutes(1));
+    RequestId id(13);
+
+    registry.record_terminal(id, Status::Success);
+    registry.record_pending(id);
+    EXPECT_EQ(registry.get(id)->state, CompletionState::Pending);
+    registry.record_terminal(id, Status::BackendError, "backend error");
+
+    const auto terminal = registry.get(id);
+    ASSERT_TRUE(terminal.has_value());
+    ASSERT_TRUE(terminal->status.has_value());
+    EXPECT_EQ(*terminal->status, Status::BackendError);
+}
+
+TEST(CompletionRegistry, RefreshesTerminalExpiryWhenRecordIsOverwritten)
+{
+    CompletionRegistry registry(4, std::chrono::milliseconds(100));
+    RequestId id(12);
+
+    registry.record_terminal(id, Status::Success);
+    std::this_thread::sleep_for(std::chrono::milliseconds(60));
+    registry.record_terminal(id, Status::BackendError, "refreshed");
+    std::this_thread::sleep_for(std::chrono::milliseconds(55));
+
+    const auto record = registry.get(id);
+    ASSERT_TRUE(record.has_value());
+    ASSERT_TRUE(record->status.has_value());
+    EXPECT_EQ(*record->status, Status::BackendError);
+}
+
 TEST(CompletionRegistry, ExpiresTerminalResultsButNotPendingResults)
 {
     CompletionRegistry registry(4, std::chrono::milliseconds(5));

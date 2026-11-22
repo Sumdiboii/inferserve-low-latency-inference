@@ -118,10 +118,29 @@ std::optional<std::uint64_t> parse_request_id(std::string_view body)
     while (!value.empty() && (value.front() == ' ' || value.front() == '\t')) {
         value.remove_prefix(1);
     }
+    if (value.empty()) {
+        return std::nullopt;
+    }
+    std::size_t digit_count = 0;
+    while (digit_count < value.size() &&
+           value[digit_count] >= '0' && value[digit_count] <= '9') {
+        ++digit_count;
+    }
+    if (digit_count == 0) {
+        return std::nullopt;
+    }
+    const std::string_view integer = value.substr(0, digit_count);
+    value.remove_prefix(digit_count);
+    while (!value.empty() && (value.front() == ' ' || value.front() == '\t')) {
+        value.remove_prefix(1);
+    }
+    if (!value.empty() && value.front() != ',' && value.front() != '}') {
+        return std::nullopt;
+    }
     std::uint64_t request_id = 0;
     const auto [end, error] = std::from_chars(
-        value.data(), value.data() + value.size(), request_id);
-    if (error != std::errc{} || end == value.data()) {
+        integer.data(), integer.data() + integer.size(), request_id);
+    if (error != std::errc{} || end != integer.data() + integer.size()) {
         return std::nullopt;
     }
     return request_id;
@@ -441,7 +460,9 @@ RequestResult send_infer_request(std::string_view host, std::uint16_t port)
     }
     // This callback returns only after the client observes terminal state, so the executor
     // records the polling-observed completion timestamp rather than the backend timestamp.
-    return poll_completion(host_string, port, *request_id);
+    RequestResult terminal = poll_completion(host_string, port, *request_id);
+    terminal.http_acknowledged = true;
+    return terminal;
 }
 
 }  // namespace inferserve::load_generator

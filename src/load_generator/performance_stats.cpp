@@ -21,7 +21,8 @@ bool has_http_result(const RequestResult& result)
 
 bool is_successful_http_acknowledgement(const RequestResult& result)
 {
-    return result.success && result.http_status == 202;
+    return result.http_acknowledged ||
+        (result.success && result.http_status == 202);
 }
 
 }  // namespace
@@ -76,22 +77,21 @@ PerformanceStatistics calculate_performance_statistics(
             continue;
         }
 
-        if (record.completion >= record.actual_send) {
-            latest_completion = has_completion ? std::max(latest_completion, record.completion) : record.completion;
-            has_completion = true;
-        }
         if (record.result.success && record.completion >= record.actual_send) {
             ++statistics.completed_requests;
-        }
-        if (record.completion >= record.scheduled_arrival) {
-            latency_samples_ms.push_back(
-                std::chrono::duration<double, std::milli>(record.completion - record.scheduled_arrival).count());
+            latest_completion = has_completion ? std::max(latest_completion, record.completion) : record.completion;
+            has_completion = true;
+            if (record.completion >= record.scheduled_arrival) {
+                latency_samples_ms.push_back(
+                    std::chrono::duration<double, std::milli>(record.completion - record.scheduled_arrival).count());
+            }
         }
 
         has_http_attempt = has_http_attempt || has_http_result(record.result);
         if (is_successful_http_acknowledgement(record.result)) {
             ++statistics.successful_http_acknowledgements;
-        } else if (!record.result.success) {
+        }
+        if (!record.result.success) {
             if (record.result.terminal_failure) {
                 ++statistics.failures.terminal_failures;
             } else if (record.result.http_status != 0) {

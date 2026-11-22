@@ -29,6 +29,8 @@ def load_metrics(path: Path) -> tuple[list[float], float | None]:
             missing = sorted(REQUIRED_COLUMNS.difference(reader.fieldnames or []))
             raise ValueError(f"{path}: missing CSV columns: {', '.join(missing)}")
         has_warmup_column = "warmup" in (reader.fieldnames or [])
+        has_success_column = "success" in (reader.fieldnames or [])
+        has_dispatched_column = "dispatched" in (reader.fieldnames or [])
         for line_number, row in enumerate(reader, start=2):
             if has_warmup_column and (row["warmup"] or "").strip().lower() == "true":
                 continue
@@ -39,11 +41,18 @@ def load_metrics(path: Path) -> tuple[list[float], float | None]:
                 raise ValueError(f"{path}:{line_number}: invalid timestamp") from error
 
             scheduled_arrivals.add(scheduled)
-            # The executor records queue-overflow arrivals with an explicit error and
-            # dispatched=false; CSV does not otherwise have a dispatched column.
             error_text = row["error"] or ""
-            dispatched = not error_text.startswith("request not dispatched:")
-            if dispatched and completion >= scheduled:
+            dispatched = (
+                (row["dispatched"] or "").strip().lower() == "true"
+                if has_dispatched_column
+                else not error_text.startswith("request not dispatched:")
+            )
+            successful = (
+                (row["success"] or "").strip().lower() == "true"
+                if has_success_column
+                else dispatched and not error_text
+            )
+            if dispatched and successful and completion >= scheduled:
                 latencies.append(completion - scheduled)
                 completion_times.append(completion)
 

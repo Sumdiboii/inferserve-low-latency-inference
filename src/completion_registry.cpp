@@ -1,5 +1,6 @@
 #include <inferserve/completion_registry.hpp>
 
+#include <algorithm>
 #include <utility>
 
 namespace inferserve {
@@ -9,6 +10,15 @@ void CompletionRegistry::record_pending(RequestId request_id)
     const std::lock_guard lock(mutex_);
     evict_expired();
     terminal_.erase(request_id.value());
+    const auto existing = std::find_if(
+        terminal_order_.begin(),
+        terminal_order_.end(),
+        [request_id](const TerminalEntry& entry) {
+            return entry.request_id == request_id;
+        });
+    if (existing != terminal_order_.end()) {
+        terminal_order_.erase(existing);
+    }
     pending_[request_id.value()] = CompletionRecord{};
 }
 
@@ -26,6 +36,16 @@ void CompletionRegistry::record_terminal(RequestId request_id, Status status, st
     record.error = std::move(error);
     if (terminal_.find(request_id.value()) != terminal_.end()) {
         terminal_[request_id.value()] = record;
+        const auto existing = std::find_if(
+            terminal_order_.begin(),
+            terminal_order_.end(),
+            [request_id](const TerminalEntry& entry) {
+                return entry.request_id == request_id;
+            });
+        if (existing != terminal_order_.end()) {
+            terminal_order_.erase(existing);
+        }
+        terminal_order_.push_back(TerminalEntry{request_id, record, now});
         return;
     }
     terminal_[request_id.value()] = record;

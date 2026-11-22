@@ -15,6 +15,7 @@ struct RequestResult {
     std::string error;
     bool dispatched = true;
     bool terminal_failure = false;
+    bool http_acknowledged = false;
 };
 
 struct RequestTimestamps {

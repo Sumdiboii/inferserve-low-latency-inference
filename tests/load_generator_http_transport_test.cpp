@@ -87,8 +87,10 @@ TEST(HttpTransport, SendsOpenAndClosedLoopRequestsThroughServerRuntime)
     ASSERT_EQ(closed_records.size(), 1);
     EXPECT_TRUE(open_records.front().result.success) << open_records.front().result.error;
     EXPECT_EQ(open_records.front().result.http_status, 200);
+    EXPECT_TRUE(open_records.front().result.http_acknowledged);
     EXPECT_TRUE(closed_records.front().result.success) << closed_records.front().result.error;
     EXPECT_EQ(closed_records.front().result.http_status, 200);
+    EXPECT_TRUE(closed_records.front().result.http_acknowledged);
     EXPECT_TRUE(backend_processed_requests);
     EXPECT_LE(open_records.front().scheduled_arrival, open_records.front().actual_send);
     EXPECT_LE(open_records.front().actual_send, open_records.front().completion);
@@ -152,6 +154,42 @@ TEST(HttpTransport, RecordsMalformedAdmissionResponse)
             const char response[] =
                 "HTTP/1.1 202 Accepted\r\nContent-Type: application/json\r\n"
                 "Content-Length: 2\r\nConnection: close\r\n\r\n{}";
+            ::send(client, response, sizeof(response) - 1, 0);
+            ::close(client);
+        }
+        ::close(listener);
+    });
+
+    const auto result = inferserve::load_generator::send_infer_request("127.0.0.1", port);
+    server.join();
+
+    EXPECT_FALSE(result.success);
+    EXPECT_EQ(result.http_status, 202);
+    EXPECT_NE(result.error.find("missing request_id"), std::string::npos);
+}
+
+TEST(HttpTransport, RejectsRequestIdWithTrailingCharacters)
+{
+    const int listener = ::socket(AF_INET, SOCK_STREAM, 0);
+    ASSERT_GE(listener, 0);
+    sockaddr_in address{};
+    address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    address.sin_family = AF_INET;
+    address.sin_port = 0;
+    ASSERT_EQ(::bind(listener, reinterpret_cast<const sockaddr*>(&address), sizeof(address)), 0);
+    ASSERT_EQ(::listen(listener, 1), 0);
+    socklen_t address_length = sizeof(address);
+    ASSERT_EQ(::getsockname(listener, reinterpret_cast<sockaddr*>(&address), &address_length), 0);
+    const std::uint16_t port = ntohs(address.sin_port);
+
+    std::thread server([listener] {
+        const int client = ::accept(listener, nullptr, nullptr);
+        if (client >= 0) {
+            char buffer[512];
+            ::recv(client, buffer, sizeof(buffer), 0);
+            const char response[] =
+                "HTTP/1.1 202 Accepted\r\nContent-Type: application/json\r\n"
+                "Content-Length: 23\r\nConnection: close\r\n\r\n{\"request_id\":1abc}";
             ::send(client, response, sizeof(response) - 1, 0);
             ::close(client);
         }

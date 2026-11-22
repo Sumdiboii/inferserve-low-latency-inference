@@ -336,26 +336,12 @@ void handle_client(int client,
         const std::uint64_t request_id = next_request_id.fetch_add(1);
         const Status status = admission.admit(Request(RequestId(request_id), std::move(*input)));
         if (status == Status::Success) {
-            if (completion_registry != nullptr) {
-                completion_registry->record_pending(RequestId(request_id));
-            }
             send_all(client, response(202, "Accepted", "{\"request_id\":" + std::to_string(request_id) + "}"));
         } else if (status == Status::InvalidInput) {
-            if (completion_registry != nullptr) {
-                completion_registry->record_terminal(RequestId(request_id), status, "invalid input");
-            }
             send_all(client, response(400, "Bad Request", "{\"error\":\"invalid inference input\"}"));
         } else if (status == Status::ShuttingDown) {
-            if (completion_registry != nullptr) {
-                completion_registry->record_terminal(RequestId(request_id), status, "server shutting down");
-            }
             send_all(client, response(503, "Service Unavailable", "{\"error\":\"server is shutting down\"}"));
         } else {
-            if (completion_registry != nullptr) {
-                completion_registry->record_terminal(RequestId(request_id), status,
-                                                     status == Status::QueueFull ? "queue full"
-                                                                                : "request was not accepted");
-            }
             send_all(client, response(503, "Service Unavailable", "{\"error\":\"request was not accepted\"}"));
         }
     } else {

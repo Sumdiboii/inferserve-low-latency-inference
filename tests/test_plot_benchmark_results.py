@@ -67,6 +67,21 @@ class BenchmarkPlotTest(unittest.TestCase):
             self.assertEqual(legacy_latencies, [10.0, 10.0])
             self.assertAlmostEqual(legacy_throughput, 2.0 * 1000.0 / 110.0)
 
+    def test_success_and_dispatched_columns_exclude_failed_rows(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "records.csv"
+            path.write_text(
+                "scheduled_arrival_ms,completion_ms,error,warmup,dispatched,success\n"
+                "0,100,,false,true,true\n"
+                "1000,1200,backend error,false,true,false\n"
+                "2000,2100,request not dispatched: pending queue is full,false,false,false\n"
+                "3000,3100,request rejected,false,true,false\n",
+                encoding="utf-8",
+            )
+            latencies, throughput = load_metrics(path)
+            self.assertEqual(latencies, [100.0])
+            self.assertAlmostEqual(throughput, 1.0 * 1000.0 / 100.0)
+
     def test_empty_warmup_values_are_treated_as_measured(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "records.csv"
