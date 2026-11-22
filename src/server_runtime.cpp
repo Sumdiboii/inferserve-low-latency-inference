@@ -16,7 +16,15 @@ constexpr std::size_t kRuntimeMaxBatchSize = 32;
 }  // namespace
 
 ServerRuntime::ServerRuntime(Backend& backend, std::uint16_t port)
-    : backend_(backend), server_(admission_, port, &completion_registry_)
+    : ServerRuntime(backend, port, kRuntimeMaxBatchSize)
+{
+}
+
+ServerRuntime::ServerRuntime(Backend& backend, std::uint16_t port,
+                            std::size_t max_batch_size)
+    : max_batch_size_(max_batch_size),
+      backend_(backend),
+      server_(admission_, port, &completion_registry_)
 {
 }
 
@@ -28,7 +36,11 @@ void ServerRuntime::run(const volatile std::sig_atomic_t* shutdown_requested)
     has_run_ = true;
 
     backend_.load();
-    const std::size_t max_batch_size = std::min(backend_.max_batch_size(), kRuntimeMaxBatchSize);
+    if (max_batch_size_ == 0) {
+        throw std::invalid_argument("maximum batch size must be positive");
+    }
+    const std::size_t max_batch_size =
+        std::min({backend_.max_batch_size(), max_batch_size_, kRuntimeMaxBatchSize});
     batcher_ = std::make_unique<Batcher>(admission_, dispatch_queue_, max_batch_size,
                                          std::chrono::milliseconds::zero(), &metrics_,
                                          &completion_registry_);

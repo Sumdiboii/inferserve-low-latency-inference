@@ -33,6 +33,22 @@ bool parse_server_options(int argc, char* argv[], ServerOptions& options, std::s
                 return false;
             }
             options.model_path = argv[index];
+        } else if (argument == "--max-batch-size") {
+            if (++index >= argc) {
+                error = "--max-batch-size requires a value";
+                return false;
+            }
+            unsigned int max_batch_size = 0;
+            const std::string_view value(argv[index]);
+            const auto [end, parse_error] =
+                std::from_chars(value.data(), value.data() + value.size(), max_batch_size);
+            if (parse_error != std::errc{} ||
+                end != value.data() + value.size() ||
+                max_batch_size == 0) {
+                error = "max batch size must be a positive integer";
+                return false;
+            }
+            options.max_batch_size = max_batch_size;
         } else if (!argument.empty() && argument.front() != '-' && !has_port) {
             unsigned int port = 0;
             const auto [end, parse_error] =

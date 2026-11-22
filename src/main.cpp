@@ -28,8 +28,8 @@ namespace {
 void print_usage()
 {
     std::cerr << "Usage:\n"
-                 "  inferserve [port] [--backend synthetic|onnx] [--model <path>]\n"
-                 "  inferserve --backend onnx --model <path> [port]\n";
+                 "  inferserve [port] [--backend synthetic|onnx] [--model <path>] [--max-batch-size <N>]\n"
+                 "  inferserve --backend onnx --model <path> [--max-batch-size <N>] [port]\n";
 }
 
 }  // namespace
@@ -54,7 +54,7 @@ int main(int argc, char* argv[])
         inferserve::Backend& backend = options.backend == inferserve::ServerBackend::OnnxRuntime
                                            ? static_cast<inferserve::Backend&>(onnx_backend)
                                            : static_cast<inferserve::Backend&>(synthetic_backend);
-        inferserve::ServerRuntime server(backend, options.port);
+        inferserve::ServerRuntime server(backend, options.port, options.max_batch_size);
         if (std::signal(SIGINT, request_shutdown) == SIG_ERR ||
             std::signal(SIGTERM, request_shutdown) == SIG_ERR) {
             std::cerr << "Failed to register shutdown signal handlers\n";
