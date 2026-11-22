@@ -128,6 +128,56 @@ TEST(HttpServer, RegistersHealthAndInferenceEndpoints)
     EXPECT_FALSE(rejection_was_queued);
 }
 
+TEST(HttpServer, ReportsCompletionRegistryStates)
+{
+    inferserve::CompletionRegistry registry(4, std::chrono::minutes(1));
+    inferserve::RequestAdmission admission(1, nullptr, &registry);
+    inferserve::HttpServer server(admission, 0, &registry);
+    std::thread server_thread([&server] { server.run(); });
+
+    const std::string inference = post_infer(
+        server.port(), "{\"input\":[1.5,-2,3]}");
+    EXPECT_NE(inference.find("HTTP/1.1 202 Accepted"), std::string::npos);
+
+    const std::string pending = get_response(
+        server.port(),
+        "GET /results/1 HTTP/1.1\r\nHost: localhost\r\n\r\n");
+    EXPECT_NE(pending.find("HTTP/1.1 202 Accepted"), std::string::npos);
+    EXPECT_NE(pending.find("\"request_id\":1"), std::string::npos);
+    EXPECT_NE(pending.find("\"state\":\"pending\""), std::string::npos);
+
+    registry.record_terminal(inferserve::RequestId(2), inferserve::Status::Success);
+    const std::string success = get_response(
+        server.port(),
+        "GET /results/2 HTTP/1.1\r\nHost: localhost\r\n\r\n");
+    EXPECT_NE(success.find("HTTP/1.1 200 OK"), std::string::npos);
+    EXPECT_NE(success.find("\"state\":\"terminal\""), std::string::npos);
+    EXPECT_NE(success.find("\"status\":\"success\""), std::string::npos);
+
+    registry.record_terminal(
+        inferserve::RequestId(3),
+        inferserve::Status::BackendError,
+        "backend error");
+    const std::string failure = get_response(
+        server.port(),
+        "GET /results/3 HTTP/1.1\r\nHost: localhost\r\n\r\n");
+    EXPECT_NE(failure.find("HTTP/1.1 502 Bad Gateway"), std::string::npos);
+    EXPECT_NE(failure.find("\"status\":\"backend_error\""), std::string::npos);
+    EXPECT_NE(failure.find("\"error\":\"backend error\""), std::string::npos);
+
+    const std::string unknown = get_response(
+        server.port(),
+        "GET /results/999 HTTP/1.1\r\nHost: localhost\r\n\r\n");
+    EXPECT_NE(unknown.find("HTTP/1.1 404 Not Found"), std::string::npos);
+    EXPECT_NE(unknown.find("\"request_id\":999"), std::string::npos);
+    EXPECT_NE(unknown.find("\"state\":\"unknown\""), std::string::npos);
+
+    inferserve::Request queued(inferserve::RequestId(0), {});
+    (void)admission.try_pop(queued);
+    server.stop();
+    server_thread.join();
+}
+
 TEST(HttpServer, RejectsRequestBodyLargerThanOneMiB)
 {
     inferserve::RequestAdmission admission(1);

@@ -16,7 +16,7 @@ constexpr std::size_t kRuntimeMaxBatchSize = 32;
 }  // namespace
 
 ServerRuntime::ServerRuntime(Backend& backend, std::uint16_t port)
-    : backend_(backend), server_(admission_, port)
+    : backend_(backend), server_(admission_, port, &completion_registry_)
 {
 }
 

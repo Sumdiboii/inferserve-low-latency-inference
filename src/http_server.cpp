@@ -1,5 +1,7 @@
 #include <inferserve/http_server.hpp>
 
+#include <inferserve/completion_registry.hpp>
+
 #include <array>
 #include <cerrno>
 #include <charconv>
@@ -203,6 +205,7 @@ void send_all(int socket, std::string_view data)
 
 void handle_client(int client,
                    RequestAdmission& admission,
+                   CompletionRegistry* completion_registry,
                    std::atomic<std::uint64_t>& next_request_id,
                    const std::atomic<bool>& stopping,
                    const volatile std::sig_atomic_t* shutdown_requested)
@@ -241,6 +244,65 @@ void handle_client(int client,
         send_all(client, response(400, "Bad Request", "{\"error\":\"bad request\"}"));
     } else if (method == "GET" && path == "/health") {
         send_all(client, response(200, "OK", "{\"status\":\"ok\"}"));
+    } else if (method == "GET" && path.starts_with("/results/")) {
+        const std::string_view request_id_text = path.substr(std::string_view("/results/").size());
+        std::uint64_t request_id_value = 0;
+        if (request_id_text.empty() ||
+            request_id_text.find('/') != std::string_view::npos) {
+            send_all(client, response(404, "Not Found",
+                                      "{\"request_id\":null,\"state\":\"unknown\",\"error\":\"not found\"}"));
+        } else {
+            const auto [end, error] = std::from_chars(
+                request_id_text.data(),
+                request_id_text.data() + request_id_text.size(),
+                request_id_value);
+            if (error != std::errc{} || end != request_id_text.data() + request_id_text.size()) {
+                send_all(client, response(404, "Not Found",
+                                          "{\"request_id\":null,\"state\":\"unknown\",\"error\":\"not found\"}"));
+            } else if (completion_registry == nullptr) {
+                send_all(client, response(404, "Not Found",
+                                          "{\"request_id\":" + std::to_string(request_id_value) +
+                                          ",\"state\":\"unknown\",\"error\":\"not found\"}"));
+            } else {
+                const auto record = completion_registry->get(RequestId(request_id_value));
+                if (!record.has_value()) {
+                    send_all(client, response(404, "Not Found",
+                                              "{\"request_id\":" + std::to_string(request_id_value) +
+                                              ",\"state\":\"unknown\",\"error\":\"not found\"}"));
+                } else if (record->state == CompletionState::Pending) {
+                    send_all(client, response(202, "Accepted",
+                                              "{\"request_id\":" + std::to_string(request_id_value) +
+                                              ",\"state\":\"pending\"}"));
+                } else if (record->status.has_value() && *record->status == Status::Success) {
+                    send_all(client, response(200, "OK",
+                                              "{\"request_id\":" + std::to_string(request_id_value) +
+                                              ",\"state\":\"terminal\",\"status\":\"success\"}"));
+                } else {
+                    const std::string status_name =
+                        record->status.has_value()
+                            ? (*record->status == Status::InvalidInput ? "invalid_input"
+                               : *record->status == Status::QueueFull ? "queue_full"
+                               : *record->status == Status::ShuttingDown ? "shutting_down"
+                               : *record->status == Status::BackendError ? "backend_error"
+                               : "internal_error")
+                            : "internal_error";
+                    const int http_status =
+                        !record->status.has_value() || *record->status == Status::InternalError ? 500
+                        : *record->status == Status::InvalidInput ? 400
+                        : *record->status == Status::BackendError ? 502
+                        : 503;
+                    const std::string_view reason =
+                        http_status == 400 ? "Bad Request"
+                        : http_status == 502 ? "Bad Gateway"
+                        : http_status == 500 ? "Internal Server Error"
+                        : "Service Unavailable";
+                    send_all(client, response(http_status, reason,
+                                              "{\"request_id\":" + std::to_string(request_id_value) +
+                                              ",\"state\":\"terminal\",\"status\":\"" + status_name +
+                                              "\",\"error\":\"" + record->error + "\"}"));
+                }
+            }
+        }
     } else if (method == "POST" && path == "/infer") {
         const auto body_length = content_length(std::string_view(request.data(), header_end + 2));
         if (!body_length.has_value()) {
@@ -274,12 +336,26 @@ void handle_client(int client,
         const std::uint64_t request_id = next_request_id.fetch_add(1);
         const Status status = admission.admit(Request(RequestId(request_id), std::move(*input)));
         if (status == Status::Success) {
+            if (completion_registry != nullptr) {
+                completion_registry->record_pending(RequestId(request_id));
+            }
             send_all(client, response(202, "Accepted", "{\"request_id\":" + std::to_string(request_id) + "}"));
         } else if (status == Status::InvalidInput) {
+            if (completion_registry != nullptr) {
+                completion_registry->record_terminal(RequestId(request_id), status, "invalid input");
+            }
             send_all(client, response(400, "Bad Request", "{\"error\":\"invalid inference input\"}"));
         } else if (status == Status::ShuttingDown) {
+            if (completion_registry != nullptr) {
+                completion_registry->record_terminal(RequestId(request_id), status, "server shutting down");
+            }
             send_all(client, response(503, "Service Unavailable", "{\"error\":\"server is shutting down\"}"));
         } else {
+            if (completion_registry != nullptr) {
+                completion_registry->record_terminal(RequestId(request_id), status,
+                                                     status == Status::QueueFull ? "queue full"
+                                                                                : "request was not accepted");
+            }
             send_all(client, response(503, "Service Unavailable", "{\"error\":\"request was not accepted\"}"));
         }
     } else {
@@ -289,7 +365,14 @@ void handle_client(int client,
 
 }  // namespace
 
-HttpServer::HttpServer(RequestAdmission& admission, std::uint16_t port) : admission_(admission)
+HttpServer::HttpServer(RequestAdmission& admission, std::uint16_t port)
+    : HttpServer(admission, port, nullptr)
+{
+}
+
+HttpServer::HttpServer(RequestAdmission& admission, std::uint16_t port,
+                       CompletionRegistry* completion_registry)
+    : admission_(admission), completion_registry_(completion_registry)
 {
     socket_ = ::socket(AF_INET, SOCK_STREAM, 0);
     if (socket_ < 0) {
@@ -342,7 +425,8 @@ void HttpServer::run(const volatile std::sig_atomic_t* shutdown_requested)
         for (std::size_t index = 0; index < kClientWorkerCount; ++index) {
             client_workers.emplace_back([this, shutdown_requested] {
                 while (std::optional<int> client = clients_.pop()) {
-                    handle_client(*client, admission_, next_request_id_, stopping_, shutdown_requested);
+                    handle_client(*client, admission_, completion_registry_, next_request_id_,
+                                  stopping_, shutdown_requested);
                     ::close(*client);
                 }
             });

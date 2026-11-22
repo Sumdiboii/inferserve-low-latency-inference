@@ -12,9 +12,12 @@
 
 namespace inferserve {
 
+class CompletionRegistry;
+
 class HttpServer {
 public:
     HttpServer(RequestAdmission& admission, std::uint16_t port);
+    HttpServer(RequestAdmission& admission, std::uint16_t port, CompletionRegistry* completion_registry);
     ~HttpServer();
 
     HttpServer(const HttpServer&) = delete;
@@ -28,6 +31,7 @@ private:
     int socket_ = -1;
     std::uint16_t port_ = 0;
     RequestAdmission& admission_;
+    CompletionRegistry* completion_registry_ = nullptr;
     BoundedQueue<int> clients_{64};
     std::atomic<std::uint64_t> next_request_id_{1};
     std::atomic<bool> stopping_{false};
