@@ -39,6 +39,12 @@ because they cannot identify requests that were not dispatched.
 CSV files containing a `warmup` column exclude rows marked `true` from latency
 and throughput calculations. Legacy CSV files without the `warmup` column are
 treated as fully measured runs.
+The HTTP load generator opens a TCP connection for each HTTP exchange and closes
+it afterward. In particular, this includes the `/infer` admission request and
+each `/results/{request_id}` polling request. Thus, reported HTTP request latency
+includes connection establishment and teardown effects, as well as
+completion-polling detection delay; it is client-observed end-to-end latency,
+not pure inference execution latency.
 
 Run its focused parser and plot-output tests with:
 
