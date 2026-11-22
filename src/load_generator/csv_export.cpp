@@ -43,7 +43,7 @@ void write_records_csv(std::ostream& output, const std::vector<RequestTimestamps
     const auto original_flags = output.flags();
     const auto original_precision = output.precision();
 
-    output << "request_index,scheduled_arrival_ms,actual_send_ms,completion_ms,dispatch_lag_ms,http_status,success,error,warmup\n";
+    output << "request_index,scheduled_arrival_ms,actual_send_ms,completion_ms,dispatch_lag_ms,http_status,success,error,warmup,dispatched,terminal_failure\n";
     output << std::fixed << std::setprecision(3);
     for (std::size_t index = 0; index < records.size(); ++index) {
         const auto& record = records[index];
@@ -56,7 +56,9 @@ void write_records_csv(std::ostream& output, const std::vector<RequestTimestamps
         }
         output << ',' << (record.result.success ? "true" : "false") << ',';
         write_csv_field(output, record.result.error);
-        output << ',' << (record.request_index < warmup_count ? "true" : "false") << '\n';
+        output << ',' << (record.request_index < warmup_count ? "true" : "false")
+               << ',' << (record.result.dispatched ? "true" : "false")
+               << ',' << (record.result.terminal_failure ? "true" : "false") << '\n';
     }
 
     output.flags(original_flags);

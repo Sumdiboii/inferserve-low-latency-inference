@@ -9,11 +9,12 @@
 namespace inferserve::load_generator {
 
 struct RequestResult {
-    // A 2xx response is a successful request; the server's 202 confirms admission, not inference completion.
+    // HTTP 202 confirms admission, while a terminal HTTP 200 confirms inference completion observed by the client.
     bool success = true;
     int http_status = 0;
     std::string error;
     bool dispatched = true;
+    bool terminal_failure = false;
 };
 
 struct RequestTimestamps {

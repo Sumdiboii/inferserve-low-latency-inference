@@ -270,6 +270,7 @@ int main(int argc, char* argv[])
                    performance.http_acknowledgements_per_second);
         std::cout << "request failures: failed=" << performance.failures.failed
                   << " rejected=" << performance.failures.rejected
+                  << " terminal_failures=" << performance.failures.terminal_failures
                   << " undispatched=" << performance.failures.undispatched << '\n';
         if (has_failed_requests) {
             return 2;

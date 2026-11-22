@@ -26,9 +26,9 @@ TEST(CsvExport, WritesStableHeaderValuesAndRequestOrder)
     write_records_csv(output, records);
 
     EXPECT_EQ(output.str(),
-              "request_index,scheduled_arrival_ms,actual_send_ms,completion_ms,dispatch_lag_ms,http_status,success,error,warmup\n"
-              "9,10.000,12.000,15.000,2.000,,true,,false\n"
-              "2,20.000,25.000,30.000,5.000,,true,,false\n");
+              "request_index,scheduled_arrival_ms,actual_send_ms,completion_ms,dispatch_lag_ms,http_status,success,error,warmup,dispatched,terminal_failure\n"
+              "9,10.000,12.000,15.000,2.000,,true,,false,true,false\n"
+              "2,20.000,25.000,30.000,5.000,,true,,false,true,false\n");
 }
 
 TEST(CsvExport, IncludesHttpStatusAndEscapesFailureMessage)
@@ -60,8 +60,9 @@ TEST(CsvExport, MarksWarmupPrefixAndPreservesEveryRow)
     write_records_csv(output, records, 1);
 
     EXPECT_NE(output.str().find("0,0.000"), std::string::npos);
-    EXPECT_NE(output.str().find(",true\n"), std::string::npos);
-    EXPECT_NE(output.str().find(",false\n"), std::string::npos);
+    EXPECT_NE(output.str().find(",true,true,false\n"), std::string::npos);
+    EXPECT_NE(output.str().find(",true,true,false\n"), std::string::npos);
+    EXPECT_NE(output.str().find(",false,true,false\n"), std::string::npos);
     EXPECT_NE(output.str().find("2,20.000"), std::string::npos);
 }
 

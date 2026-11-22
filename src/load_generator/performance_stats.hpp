@@ -19,6 +19,7 @@ struct RequestFailureCounts {
     std::size_t failed = 0;
     std::size_t rejected = 0;
     std::size_t undispatched = 0;
+    std::size_t terminal_failures = 0;
 };
 
 struct PerformanceStatistics {

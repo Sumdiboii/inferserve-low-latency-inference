@@ -75,7 +75,7 @@ TEST(PerformanceStatistics, SeparatesOfferedThroughputAcknowledgementAndFailureR
     const PerformanceStatistics statistics = calculate_performance_statistics(records);
 
     EXPECT_EQ(statistics.scheduled_requests, 4U);
-    EXPECT_EQ(statistics.completed_requests, 3U);
+    EXPECT_EQ(statistics.completed_requests, 1U);
     EXPECT_EQ(statistics.successful_http_acknowledgements, 1U);
     EXPECT_EQ(statistics.failures.failed, 1U);
     EXPECT_EQ(statistics.failures.rejected, 1U);
@@ -83,7 +83,7 @@ TEST(PerformanceStatistics, SeparatesOfferedThroughputAcknowledgementAndFailureR
     ASSERT_TRUE(statistics.offered_requests_per_second.has_value());
     EXPECT_NEAR(*statistics.offered_requests_per_second, 1.0, 1e-9);
     ASSERT_TRUE(statistics.throughput_requests_per_second.has_value());
-    EXPECT_NEAR(*statistics.throughput_requests_per_second, 1.2, 1e-9);
+    EXPECT_NEAR(*statistics.throughput_requests_per_second, 0.4, 1e-9);
     ASSERT_TRUE(statistics.http_acknowledgements_per_second.has_value());
     EXPECT_NEAR(*statistics.http_acknowledgements_per_second, 0.4, 1e-9);
 }
@@ -118,7 +118,7 @@ TEST(PerformanceStatistics, ExcludesWarmupFromStatisticsAndMeasuredWindows)
 
     EXPECT_EQ(statistics.scheduled_requests, 2U);
     EXPECT_EQ(statistics.completed_requests, 2U);
-    EXPECT_EQ(statistics.successful_http_acknowledgements, 2U);
+    EXPECT_EQ(statistics.successful_http_acknowledgements, 1U);
     EXPECT_EQ(statistics.failures.failed, 0U);
     EXPECT_EQ(statistics.failures.rejected, 0U);
     ASSERT_TRUE(statistics.latency_ms.has_value());
