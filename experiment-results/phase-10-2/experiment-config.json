@@ -1,0 +1,15 @@
+{
+  "load_generator": "../build/debug/inferserve_load_generator",
+  "runner_config": "experiments/phase-10-2-onnx-delay.json",
+  "server": "inferserve --backend onnx --model tests/data/identity_dynamic_batch_2.onnx --max-batch-size 8 --max-batch-delay-ms {0|1|5} {port}",
+  "offered_load_requests_per_second": 500,
+  "request_count": 1100,
+  "warmup_count": 100,
+  "measured_request_count": 1000,
+  "repetitions_per_configuration": 3,
+  "configurations": [
+    { "name": "delay-0ms", "max_batch_delay_ms": 0, "port": 18100 },
+    { "name": "delay-1ms", "max_batch_delay_ms": 1, "port": 18101 },
+    { "name": "delay-5ms", "max_batch_delay_ms": 5, "port": 18102 }
+  ]
+}

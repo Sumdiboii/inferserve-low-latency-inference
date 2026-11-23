@@ -1,0 +1,30 @@
+{
+  "load_generator": "../build/debug/inferserve_load_generator",
+  "output_dir": "../experiment-results/phase-10-2",
+  "runs": [
+    {
+      "name": "delay-0ms",
+      "pattern": "fixed-rate",
+      "count": 1100,
+      "rate": 500,
+      "warmup_count": 100,
+      "http": { "host": "127.0.0.1", "port": 18100 }
+    },
+    {
+      "name": "delay-1ms",
+      "pattern": "fixed-rate",
+      "count": 1100,
+      "rate": 500,
+      "warmup_count": 100,
+      "http": { "host": "127.0.0.1", "port": 18101 }
+    },
+    {
+      "name": "delay-5ms",
+      "pattern": "fixed-rate",
+      "count": 1100,
+      "rate": 500,
+      "warmup_count": 100,
+      "http": { "host": "127.0.0.1", "port": 18102 }
+    }
+  ]
+}

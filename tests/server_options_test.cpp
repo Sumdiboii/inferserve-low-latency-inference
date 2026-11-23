@@ -86,6 +86,31 @@ TEST(ServerOptions, RejectsInvalidMaxBatchSize)
     EXPECT_NE(error.find("requires a value"), std::string::npos);
 }
 
+TEST(ServerOptions, ParsesMaximumBatchDelayMilliseconds)
+{
+    char executable[] = "inferserve";
+    char option[] = "--max-batch-delay-ms";
+    char delay[] = "5";
+    char* argv[] = {executable, option, delay};
+    ServerOptions options;
+    std::string error;
+
+    ASSERT_TRUE(parse_server_options(3, argv, options, error));
+    EXPECT_EQ(options.max_batch_delay, std::chrono::milliseconds(5));
+}
+
+TEST(ServerOptions, RejectsInvalidMaximumBatchDelay)
+{
+    char executable[] = "inferserve";
+    char option[] = "--max-batch-delay-ms";
+    char delay[] = "-1";
+    char* argv[] = {executable, option, delay};
+    ServerOptions options;
+    std::string error;
+
+    EXPECT_FALSE(parse_server_options(3, argv, options, error));
+}
+
 TEST(ServerOptions, RejectsInvalidBackendAndMissingOnnxModel)
 {
     char executable[] = "inferserve";

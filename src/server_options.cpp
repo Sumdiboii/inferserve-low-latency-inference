@@ -1,6 +1,7 @@
 #include <inferserve/server_options.hpp>
 
 #include <charconv>
+#include <chrono>
 #include <string_view>
 #include <system_error>
 
@@ -49,6 +50,21 @@ bool parse_server_options(int argc, char* argv[], ServerOptions& options, std::s
                 return false;
             }
             options.max_batch_size = max_batch_size;
+        } else if (argument == "--max-batch-delay-ms") {
+            if (++index >= argc) {
+                error = "--max-batch-delay-ms requires a value";
+                return false;
+            }
+            std::uint64_t delay_ms = 0;
+            const std::string_view value(argv[index]);
+            const auto [end, parse_error] =
+                std::from_chars(value.data(), value.data() + value.size(), delay_ms);
+            if (parse_error != std::errc{} || end != value.data() + value.size() ||
+                delay_ms > static_cast<std::uint64_t>(std::chrono::milliseconds::max().count())) {
+                error = "maximum batch delay must be a non-negative integer number of milliseconds";
+                return false;
+            }
+            options.max_batch_delay = std::chrono::milliseconds(delay_ms);
         } else if (!argument.empty() && argument.front() != '-' && !has_port) {
             unsigned int port = 0;
             const auto [end, parse_error] =

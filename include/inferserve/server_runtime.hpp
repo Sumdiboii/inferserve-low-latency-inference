@@ -20,7 +20,8 @@ namespace inferserve {
 class ServerRuntime {
 public:
     ServerRuntime(Backend& backend, std::uint16_t port);
-    ServerRuntime(Backend& backend, std::uint16_t port, std::size_t max_batch_size);
+    ServerRuntime(Backend& backend, std::uint16_t port, std::size_t max_batch_size,
+                  std::chrono::milliseconds max_batch_delay = std::chrono::milliseconds::zero());
 
     ServerRuntime(const ServerRuntime&) = delete;
     ServerRuntime& operator=(const ServerRuntime&) = delete;
@@ -34,6 +35,7 @@ private:
 
     RuntimeMetrics metrics_;
     std::size_t max_batch_size_;
+    std::chrono::milliseconds max_batch_delay_;
     CompletionRegistry completion_registry_{4096, std::chrono::minutes(5)};
     RequestAdmission admission_{1024, &metrics_, &completion_registry_};
     BatchDispatchQueue dispatch_queue_{1024};

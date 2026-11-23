@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <cstddef>
+#include <chrono>
 #include <string>
 
 namespace inferserve {
@@ -16,6 +17,7 @@ struct ServerOptions {
     ServerBackend backend = ServerBackend::Synthetic;
     std::string model_path;
     std::size_t max_batch_size = 32;
+    std::chrono::milliseconds max_batch_delay{0};
     bool help = false;
 };
 
