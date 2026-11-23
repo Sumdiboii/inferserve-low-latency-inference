@@ -1,0 +1,15 @@
+{
+  "runner_config": "experiments/phase-10-3-onnx-load.json",
+  "server_command": "inferserve --backend onnx --model tests/data/identity_dynamic_batch_2.onnx --max-batch-size 8 --max-batch-delay-ms 0 {port}",
+  "backend": "ONNX Runtime CPU",
+  "model": "tests/data/identity_dynamic_batch_2.onnx",
+  "max_batch_size": 8,
+  "max_batch_delay_ms": 0,
+  "pattern": "fixed-rate open-loop",
+  "transport": "HTTP with completion polling",
+  "request_count": 1100,
+  "warmup_count": 100,
+  "measured_request_count": 1000,
+  "repetitions_per_rate": 3,
+  "offered_rates_per_second": [100, 250, 500, 750, 1000, 1500, 2000, 3000]
+}

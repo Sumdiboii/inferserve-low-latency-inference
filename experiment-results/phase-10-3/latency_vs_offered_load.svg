@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="460" viewBox="0 0 760 460">
+<rect width="100%" height="100%" fill="white"/>
+<text x="380" y="30" text-anchor="middle" font-family="sans-serif" font-size="18">Latency vs offered load</text>
+<text x="20" y="215" text-anchor="middle" font-family="sans-serif" font-size="13">Latency (ms)</text>
+<line x1="78" y1="370" x2="735" y2="370" stroke="#ddd"/>
+<text x="70" y="374" text-anchor="end" font-family="sans-serif" font-size="11">0.0</text>
+<line x1="78" y1="292.5" x2="735" y2="292.5" stroke="#ddd"/>
+<text x="70" y="296.5" text-anchor="end" font-family="sans-serif" font-size="11">24.1</text>
+<line x1="78" y1="215" x2="735" y2="215" stroke="#ddd"/>
+<text x="70" y="219" text-anchor="end" font-family="sans-serif" font-size="11">48.1</text>
+<line x1="78" y1="137.5" x2="735" y2="137.5" stroke="#ddd"/>
+<text x="70" y="141.5" text-anchor="end" font-family="sans-serif" font-size="11">72.2</text>
+<line x1="78" y1="60" x2="735" y2="60" stroke="#ddd"/>
+<text x="70" y="64" text-anchor="end" font-family="sans-serif" font-size="11">96.3</text>
+<text x="78" y="394" text-anchor="middle" font-family="sans-serif" font-size="12">100</text>
+<text x="171.857" y="394" text-anchor="middle" font-family="sans-serif" font-size="12">250</text>
+<text x="265.714" y="394" text-anchor="middle" font-family="sans-serif" font-size="12">500</text>
+<text x="359.571" y="394" text-anchor="middle" font-family="sans-serif" font-size="12">750</text>
+<text x="453.429" y="394" text-anchor="middle" font-family="sans-serif" font-size="12">1000</text>
+<text x="547.286" y="394" text-anchor="middle" font-family="sans-serif" font-size="12">1500</text>
+<text x="641.143" y="394" text-anchor="middle" font-family="sans-serif" font-size="12">2000</text>
+<text x="735" y="394" text-anchor="middle" font-family="sans-serif" font-size="12">3000</text>
+<polyline points="78,364.75 171.857,365.13 265.714,365.552 359.571,366.776 453.429,367.23 547.286,368.274 641.143,358.789 735,364.525" fill="none" stroke="#2878b5" stroke-width="3"/>
+<circle cx="78" cy="364.75" r="4" fill="#2878b5"/>
+<circle cx="171.857" cy="365.13" r="4" fill="#2878b5"/>
+<circle cx="265.714" cy="365.552" r="4" fill="#2878b5"/>
+<circle cx="359.571" cy="366.776" r="4" fill="#2878b5"/>
+<circle cx="453.429" cy="367.23" r="4" fill="#2878b5"/>
+<circle cx="547.286" cy="368.274" r="4" fill="#2878b5"/>
+<circle cx="641.143" cy="358.789" r="4" fill="#2878b5"/>
+<circle cx="735" cy="364.525" r="4" fill="#2878b5"/>
+<line x1="180" y1="410" x2="202" y2="410" stroke="#2878b5" stroke-width="3"/>
+<text x="208" y="414" text-anchor="start" font-family="sans-serif" font-size="11">p50</text>
+<polyline points="78,333.326 171.857,331.49 265.714,290.71 359.571,240.812 453.429,252.957 547.286,323.026 641.143,116.548 735,151.151" fill="none" stroke="#e1812c" stroke-width="3"/>
+<circle cx="78" cy="333.326" r="4" fill="#e1812c"/>
+<circle cx="171.857" cy="331.49" r="4" fill="#e1812c"/>
+<circle cx="265.714" cy="290.71" r="4" fill="#e1812c"/>
+<circle cx="359.571" cy="240.812" r="4" fill="#e1812c"/>
+<circle cx="453.429" cy="252.957" r="4" fill="#e1812c"/>
+<circle cx="547.286" cy="323.026" r="4" fill="#e1812c"/>
+<circle cx="641.143" cy="116.548" r="4" fill="#e1812c"/>
+<circle cx="735" cy="151.151" r="4" fill="#e1812c"/>
+<line x1="360" y1="410" x2="382" y2="410" stroke="#e1812c" stroke-width="3"/>
+<text x="388" y="414" text-anchor="start" font-family="sans-serif" font-size="11">p95</text>
+<polyline points="78,331.487 171.857,330.321 265.714,260.538 359.571,211.784 453.429,230.077 547.286,295.531 641.143,100.435 735,133.115" fill="none" stroke="#55a868" stroke-width="3"/>
+<circle cx="78" cy="331.487" r="4" fill="#55a868"/>
+<circle cx="171.857" cy="330.321" r="4" fill="#55a868"/>
+<circle cx="265.714" cy="260.538" r="4" fill="#55a868"/>
+<circle cx="359.571" cy="211.784" r="4" fill="#55a868"/>
+<circle cx="453.429" cy="230.077" r="4" fill="#55a868"/>
+<circle cx="547.286" cy="295.531" r="4" fill="#55a868"/>
+<circle cx="641.143" cy="100.435" r="4" fill="#55a868"/>
+<circle cx="735" cy="133.115" r="4" fill="#55a868"/>
+<line x1="540" y1="410" x2="562" y2="410" stroke="#55a868" stroke-width="3"/>
+<text x="568" y="414" text-anchor="start" font-family="sans-serif" font-size="11">p99</text>
+<text x="380" y="438" text-anchor="middle" font-family="sans-serif" font-size="12">Offered requests per second</text>
+</svg>

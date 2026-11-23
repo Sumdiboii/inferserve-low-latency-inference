@@ -1,0 +1,14 @@
+{
+  "load_generator": "../build/phase-10-2/inferserve_load_generator",
+  "output_dir": "../experiment-results/phase-10-3",
+  "runs": [
+    { "name": "rate-100", "pattern": "fixed-rate", "count": 1100, "rate": 100, "warmup_count": 100, "http": { "host": "127.0.0.1", "port": 18200 } },
+    { "name": "rate-250", "pattern": "fixed-rate", "count": 1100, "rate": 250, "warmup_count": 100, "http": { "host": "127.0.0.1", "port": 18201 } },
+    { "name": "rate-500", "pattern": "fixed-rate", "count": 1100, "rate": 500, "warmup_count": 100, "http": { "host": "127.0.0.1", "port": 18202 } },
+    { "name": "rate-750", "pattern": "fixed-rate", "count": 1100, "rate": 750, "warmup_count": 100, "http": { "host": "127.0.0.1", "port": 18203 } },
+    { "name": "rate-1000", "pattern": "fixed-rate", "count": 1100, "rate": 1000, "warmup_count": 100, "http": { "host": "127.0.0.1", "port": 18204 } },
+    { "name": "rate-1500", "pattern": "fixed-rate", "count": 1100, "rate": 1500, "warmup_count": 100, "http": { "host": "127.0.0.1", "port": 18205 } },
+    { "name": "rate-2000", "pattern": "fixed-rate", "count": 1100, "rate": 2000, "warmup_count": 100, "http": { "host": "127.0.0.1", "port": 18206 } },
+    { "name": "rate-3000", "pattern": "fixed-rate", "count": 1100, "rate": 3000, "warmup_count": 100, "http": { "host": "127.0.0.1", "port": 18207 } }
+  ]
+}
