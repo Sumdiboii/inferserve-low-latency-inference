@@ -95,22 +95,23 @@ execution, and completion state.
 
 ```mermaid
 flowchart LR
-    subgraph Generator[Load generator process]
-        Schedule[Open-loop schedule<br/>or closed-loop next request]
-        HTTPClient[HTTP transport]
-        ClientStats[CSV, latency,<br/>throughput, dispatch lag]
+    subgraph Generator["Load generator process"]
+        Schedule["Open-loop schedule or closed-loop next request"]
+        HTTPClient["HTTP transport"]
+        ClientStats["CSV, latency, throughput, dispatch lag"]
         Schedule --> HTTPClient --> ClientStats
     end
 
-    subgraph Server[InferServe process]
-        Adapter[HTTP adapter]
-        Admission[Validation and admission]
-        RequestQueue[Bounded request queue<br/>capacity 1024]
-        Batcher[Dynamic batcher<br/>max size + delay]
-        DispatchQueue[Bounded batch dispatch queue<br/>capacity 1024]
-        Workers[Worker pool]
-        Backend[Synthetic or<br/>ONNX Runtime CPU backend]
-        Completion[Completion registry<br/>and runtime metrics]
+    subgraph Server["InferServe process"]
+        Adapter["HTTP adapter"]
+        Admission["Validation and admission"]
+        RequestQueue["Bounded request queue (1024)"]
+        Batcher["Dynamic batcher (max size and delay)"]
+        DispatchQueue["Bounded batch dispatch queue (1024)"]
+        Workers["Worker pool"]
+        Backend["Synthetic or ONNX Runtime CPU backend"]
+        Completion["Completion registry and runtime metrics"]
+
         Adapter --> Admission --> RequestQueue --> Batcher --> DispatchQueue --> Workers --> Backend --> Completion
         Completion --> Adapter
     end
@@ -711,12 +712,7 @@ claims about production performance or superiority over other serving systems.
 
 ## AI disclosure
 
-AI assistance was used extensively throughout the project to accelerate
-implementation, debugging, test planning, experiment analysis, portability
-reviews, and documentation. The repository's code, benchmark artifacts, and
-claims were checked against the actual implementation and recorded results;
-the AI assistance does not replace those source-level and artifact-level
-validation steps.
+AI assistance was used extensively throughout InferServe to accelerate implementation, debugging, documentation, and development workflows. AI was used to assist with planning and breaking down development phases, exploring architectural approaches and design decisions, identifying test cases and edge cases, and accelerating implementation and troubleshooting. However, project direction, development decisions, reviewing generated changes, validating implementation behavior, evaluating test results, verifying benchmark artifacts, and assessing conclusions were handled by me. AI served as a productivity tool to accelerate the development process, not as a substitute for my own review, judgment, or understanding of the system.
 
 <div align="center">
 
