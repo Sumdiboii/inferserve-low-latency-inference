@@ -1,0 +1,171 @@
+{
+  "status": "complete",
+  "expected_runs_per_configuration": 3,
+  "configuration_count": 2,
+  "successful_runs": 6,
+  "failed_runs": 0,
+  "configurations": [
+    {
+      "name": "open-loop-500-rps",
+      "status": "complete",
+      "expected_runs": 3,
+      "successful_runs": 3,
+      "runs": [
+        {
+          "name": "open-loop-500-rps",
+          "repetition": 1,
+          "status": "succeeded",
+          "csv": "/home/sumedhpimplikar/Desktop/InferServe/experiment-results/phase-10-4/open-loop-500-rps/run-1/requests.csv",
+          "metadata": "/home/sumedhpimplikar/Desktop/InferServe/experiment-results/phase-10-4/open-loop-500-rps/run-1/requests.csv.metadata.json",
+          "latency_percentiles": {
+            "p50": 0.8740000000000236,
+            "p95": 11.541999999999916,
+            "p99": 14.311999999999898
+          },
+          "throughput_requests_per_second": 500.2188457450134,
+          "detail": "",
+          "exit_code": 0
+        },
+        {
+          "name": "open-loop-500-rps",
+          "repetition": 2,
+          "status": "succeeded",
+          "csv": "/home/sumedhpimplikar/Desktop/InferServe/experiment-results/phase-10-4/open-loop-500-rps/run-2/requests.csv",
+          "metadata": "/home/sumedhpimplikar/Desktop/InferServe/experiment-results/phase-10-4/open-loop-500-rps/run-2/requests.csv.metadata.json",
+          "latency_percentiles": {
+            "p50": 1.0740000000000691,
+            "p95": 12.106999999999971,
+            "p99": 15.031999999999925
+          },
+          "throughput_requests_per_second": 500.2849122575307,
+          "detail": "",
+          "exit_code": 0
+        },
+        {
+          "name": "open-loop-500-rps",
+          "repetition": 3,
+          "status": "succeeded",
+          "csv": "/home/sumedhpimplikar/Desktop/InferServe/experiment-results/phase-10-4/open-loop-500-rps/run-3/requests.csv",
+          "metadata": "/home/sumedhpimplikar/Desktop/InferServe/experiment-results/phase-10-4/open-loop-500-rps/run-3/requests.csv.metadata.json",
+          "latency_percentiles": {
+            "p50": 1.1859999999999218,
+            "p95": 11.659999999999854,
+            "p99": 14.260999999999996
+          },
+          "throughput_requests_per_second": 499.9452559944686,
+          "detail": "",
+          "exit_code": 0
+        }
+      ],
+      "aggregate": {
+        "latency_ms": {
+          "p50": {
+            "median": 1.0740000000000691,
+            "minimum": 0.8740000000000236,
+            "maximum": 1.1859999999999218,
+            "sample_count": 3
+          },
+          "p95": {
+            "median": 11.659999999999854,
+            "minimum": 11.541999999999916,
+            "maximum": 12.106999999999971,
+            "sample_count": 3
+          },
+          "p99": {
+            "median": 14.311999999999898,
+            "minimum": 14.260999999999996,
+            "maximum": 15.031999999999925,
+            "sample_count": 3
+          }
+        },
+        "throughput_requests_per_second": {
+          "median": 500.2188457450134,
+          "minimum": 499.9452559944686,
+          "maximum": 500.2849122575307,
+          "sample_count": 3
+        }
+      }
+    },
+    {
+      "name": "closed-loop",
+      "status": "complete",
+      "expected_runs": 3,
+      "successful_runs": 3,
+      "runs": [
+        {
+          "name": "closed-loop",
+          "repetition": 1,
+          "status": "succeeded",
+          "csv": "/home/sumedhpimplikar/Desktop/InferServe/experiment-results/phase-10-4/closed-loop/run-1/requests.csv",
+          "metadata": "/home/sumedhpimplikar/Desktop/InferServe/experiment-results/phase-10-4/closed-loop/run-1/requests.csv.metadata.json",
+          "latency_percentiles": {
+            "p50": 0.14699999999993452,
+            "p95": 1.5429999999999495,
+            "p99": 11.460000000000008
+          },
+          "throughput_requests_per_second": 1381.8281309807246,
+          "detail": "",
+          "exit_code": 0
+        },
+        {
+          "name": "closed-loop",
+          "repetition": 2,
+          "status": "succeeded",
+          "csv": "/home/sumedhpimplikar/Desktop/InferServe/experiment-results/phase-10-4/closed-loop/run-2/requests.csv",
+          "metadata": "/home/sumedhpimplikar/Desktop/InferServe/experiment-results/phase-10-4/closed-loop/run-2/requests.csv.metadata.json",
+          "latency_percentiles": {
+            "p50": 0.2400000000000091,
+            "p95": 10.564999999999998,
+            "p99": 11.706999999999994
+          },
+          "throughput_requests_per_second": 1007.1183122308476,
+          "detail": "",
+          "exit_code": 0
+        },
+        {
+          "name": "closed-loop",
+          "repetition": 3,
+          "status": "succeeded",
+          "csv": "/home/sumedhpimplikar/Desktop/InferServe/experiment-results/phase-10-4/closed-loop/run-3/requests.csv",
+          "metadata": "/home/sumedhpimplikar/Desktop/InferServe/experiment-results/phase-10-4/closed-loop/run-3/requests.csv.metadata.json",
+          "latency_percentiles": {
+            "p50": 0.5109999999999673,
+            "p95": 11.42899999999986,
+            "p99": 11.923999999999978
+          },
+          "throughput_requests_per_second": 505.9660992594174,
+          "detail": "",
+          "exit_code": 0
+        }
+      ],
+      "aggregate": {
+        "latency_ms": {
+          "p50": {
+            "median": 0.2400000000000091,
+            "minimum": 0.14699999999993452,
+            "maximum": 0.5109999999999673,
+            "sample_count": 3
+          },
+          "p95": {
+            "median": 10.564999999999998,
+            "minimum": 1.5429999999999495,
+            "maximum": 11.42899999999986,
+            "sample_count": 3
+          },
+          "p99": {
+            "median": 11.706999999999994,
+            "minimum": 11.460000000000008,
+            "maximum": 11.923999999999978,
+            "sample_count": 3
+          }
+        },
+        "throughput_requests_per_second": {
+          "median": 1007.1183122308476,
+          "minimum": 505.9660992594174,
+          "maximum": 1381.8281309807246,
+          "sample_count": 3
+        }
+      }
+    }
+  ]
+}

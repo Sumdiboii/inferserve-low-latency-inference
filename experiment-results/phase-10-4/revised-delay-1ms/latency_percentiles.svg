@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="450" viewBox="0 0 760 450">
+<rect width="100%" height="100%" fill="white"/>
+<text x="380" y="30" text-anchor="middle" font-family="sans-serif" font-size="18">Latency percentiles by workload mode</text>
+<text x="20" y="210" text-anchor="middle" font-family="sans-serif" font-size="13">Latency (ms)</text>
+<line x1="80" y1="360" x2="735" y2="360" stroke="#ddd"/>
+<text x="72" y="364" text-anchor="end" font-family="sans-serif" font-size="11">0.0</text>
+<line x1="80" y1="285" x2="735" y2="285" stroke="#ddd"/>
+<text x="72" y="289" text-anchor="end" font-family="sans-serif" font-size="11">263.4</text>
+<line x1="80" y1="210" x2="735" y2="210" stroke="#ddd"/>
+<text x="72" y="214" text-anchor="end" font-family="sans-serif" font-size="11">526.8</text>
+<line x1="80" y1="135" x2="735" y2="135" stroke="#ddd"/>
+<text x="72" y="139" text-anchor="end" font-family="sans-serif" font-size="11">790.2</text>
+<line x1="80" y1="60" x2="735" y2="60" stroke="#ddd"/>
+<text x="72" y="64" text-anchor="end" font-family="sans-serif" font-size="11">1053.6</text>
+<text x="189.167" y="384" text-anchor="middle" font-family="sans-serif" font-size="12">p50</text>
+<rect x="141.167" y="223.289" width="44" height="136.711" fill="#2878b5"/>
+<text x="163.167" y="218.289" text-anchor="middle" font-family="sans-serif" font-size="10">480.15</text>
+<rect x="193.167" y="356.603" width="44" height="3.39736" fill="#e1812c"/>
+<text x="215.167" y="351.603" text-anchor="middle" font-family="sans-serif" font-size="10">11.93</text>
+<text x="407.5" y="384" text-anchor="middle" font-family="sans-serif" font-size="12">p95</text>
+<rect x="359.5" y="108.723" width="44" height="251.277" fill="#2878b5"/>
+<text x="381.5" y="103.723" text-anchor="middle" font-family="sans-serif" font-size="10">882.52</text>
+<rect x="411.5" y="356.431" width="44" height="3.56876" fill="#e1812c"/>
+<text x="433.5" y="351.431" text-anchor="middle" font-family="sans-serif" font-size="10">12.53</text>
+<text x="625.833" y="384" text-anchor="middle" font-family="sans-serif" font-size="12">p99</text>
+<rect x="577.833" y="99.1304" width="44" height="260.87" fill="#2878b5"/>
+<text x="599.833" y="94.1304" text-anchor="middle" font-family="sans-serif" font-size="10">916.21</text>
+<rect x="629.833" y="356.362" width="44" height="3.63824" fill="#e1812c"/>
+<text x="651.833" y="351.362" text-anchor="middle" font-family="sans-serif" font-size="10">12.78</text>
+<rect x="220" y="405" width="14" height="14" fill="#2878b5"/>
+<text x="241" y="416" text-anchor="start" font-family="sans-serif" font-size="11">open-loop-500-rps-delay-1ms</text>
+<rect x="430" y="405" width="14" height="14" fill="#e1812c"/>
+<text x="451" y="416" text-anchor="start" font-family="sans-serif" font-size="11">closed-loop-delay-1ms</text>
+</svg>

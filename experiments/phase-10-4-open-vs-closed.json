@@ -1,0 +1,21 @@
+{
+  "load_generator": "../build/phase-10-2/inferserve_load_generator",
+  "output_dir": "../experiment-results/phase-10-4",
+  "runs": [
+    {
+      "name": "open-loop-500-rps",
+      "pattern": "fixed-rate",
+      "count": 1100,
+      "rate": 500,
+      "warmup_count": 100,
+      "http": { "host": "127.0.0.1", "port": 18300 }
+    },
+    {
+      "name": "closed-loop",
+      "pattern": "closed-loop",
+      "count": 1100,
+      "warmup_count": 100,
+      "http": { "host": "127.0.0.1", "port": 18301 }
+    }
+  ]
+}

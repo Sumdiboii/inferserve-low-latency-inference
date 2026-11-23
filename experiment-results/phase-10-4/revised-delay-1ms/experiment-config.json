@@ -1,0 +1,15 @@
+{
+  "baseline": "..",
+  "runner_config": "experiments/phase-10-4-revised-delay-1ms.json",
+  "server_command": "inferserve --backend onnx --model tests/data/identity_dynamic_batch_2.onnx --max-batch-size 8 --max-batch-delay-ms 1 {port}",
+  "backend": "ONNX Runtime CPU",
+  "model": "tests/data/identity_dynamic_batch_2.onnx",
+  "max_batch_size": 8,
+  "max_batch_delay_ms": 1,
+  "open_loop": { "pattern": "fixed-rate", "rate_per_second": 500, "port": 18400 },
+  "closed_loop": { "pattern": "closed-loop", "one_outstanding_request": true, "port": 18401 },
+  "request_count": 1100,
+  "warmup_count": 100,
+  "measured_request_count": 1000,
+  "repetitions_per_configuration": 3
+}

@@ -1,0 +1,32 @@
+{
+  "run_timestamp_utc": "2026-11-23T06:18:08Z",
+  "traffic_pattern": "closed-loop",
+  "mode": "closed_loop",
+  "transport": "http",
+  "request_count": 1100,
+  "warmup_count": 100,
+  "duration_seconds": 1.097718,
+  "configured_rate_per_second": null,
+  "scheduled_duration_seconds": null,
+  "poisson_seed": null,
+  "concurrency": 1,
+  "http_host": "127.0.0.1",
+  "http_port": 18301,
+  "cpu_architecture": "x86_64",
+  "cpu_model": "12th Gen Intel(R) Core(TM) i5-1235U",
+  "logical_cpu_count": 12,
+  "process_cpu_affinity": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
+  "kernel_version": "7.0.0-38-generic",
+  "system_load_start": {"1_minute": 2.918945, "5_minutes": 1.742188, "15_minutes": 0.906250},
+  "system_load_end": {"1_minute": 2.685059, "5_minutes": 1.712891, "15_minutes": 0.901367},
+  "cgroup_cpu_quota_us": null,
+  "cgroup_cpu_period_us": null,
+  "cgroup_cpu_limit": null,
+  "backend_identity": null,
+  "server_configuration": null,
+  "build": {
+    "compiler": "GCC 15.2.0",
+    "cxx_standard": 202002,
+    "operating_system": "Linux"
+  }
+}

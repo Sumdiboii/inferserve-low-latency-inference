@@ -1,0 +1,171 @@
+{
+  "status": "complete",
+  "expected_runs_per_configuration": 3,
+  "configuration_count": 2,
+  "successful_runs": 6,
+  "failed_runs": 0,
+  "configurations": [
+    {
+      "name": "open-loop-500-rps-delay-1ms",
+      "status": "complete",
+      "expected_runs": 3,
+      "successful_runs": 3,
+      "runs": [
+        {
+          "name": "open-loop-500-rps-delay-1ms",
+          "repetition": 1,
+          "status": "succeeded",
+          "csv": "/home/sumedhpimplikar/Desktop/InferServe/experiment-results/phase-10-4/revised-delay-1ms/open-loop-500-rps-delay-1ms/run-1/requests.csv",
+          "metadata": "/home/sumedhpimplikar/Desktop/InferServe/experiment-results/phase-10-4/revised-delay-1ms/open-loop-500-rps-delay-1ms/run-1/requests.csv.metadata.json",
+          "latency_percentiles": {
+            "p50": 480.14699999999993,
+            "p95": 882.5189999999998,
+            "p99": 916.2109999999998
+          },
+          "throughput_requests_per_second": 342.56382991842867,
+          "detail": "",
+          "exit_code": 0
+        },
+        {
+          "name": "open-loop-500-rps-delay-1ms",
+          "repetition": 2,
+          "status": "succeeded",
+          "csv": "/home/sumedhpimplikar/Desktop/InferServe/experiment-results/phase-10-4/revised-delay-1ms/open-loop-500-rps-delay-1ms/run-2/requests.csv",
+          "metadata": "/home/sumedhpimplikar/Desktop/InferServe/experiment-results/phase-10-4/revised-delay-1ms/open-loop-500-rps-delay-1ms/run-2/requests.csv.metadata.json",
+          "latency_percentiles": {
+            "p50": 448.50199999999995,
+            "p95": 823.4430000000002,
+            "p99": 850.2159999999999
+          },
+          "throughput_requests_per_second": 350.75867347278796,
+          "detail": "",
+          "exit_code": 0
+        },
+        {
+          "name": "open-loop-500-rps-delay-1ms",
+          "repetition": 3,
+          "status": "succeeded",
+          "csv": "/home/sumedhpimplikar/Desktop/InferServe/experiment-results/phase-10-4/revised-delay-1ms/open-loop-500-rps-delay-1ms/run-3/requests.csv",
+          "metadata": "/home/sumedhpimplikar/Desktop/InferServe/experiment-results/phase-10-4/revised-delay-1ms/open-loop-500-rps-delay-1ms/run-3/requests.csv.metadata.json",
+          "latency_percentiles": {
+            "p50": 502.5150000000001,
+            "p95": 914.6529999999998,
+            "p99": 953.2150000000001
+          },
+          "throughput_requests_per_second": 337.5625418999505,
+          "detail": "",
+          "exit_code": 0
+        }
+      ],
+      "aggregate": {
+        "latency_ms": {
+          "p50": {
+            "median": 480.14699999999993,
+            "minimum": 448.50199999999995,
+            "maximum": 502.5150000000001,
+            "sample_count": 3
+          },
+          "p95": {
+            "median": 882.5189999999998,
+            "minimum": 823.4430000000002,
+            "maximum": 914.6529999999998,
+            "sample_count": 3
+          },
+          "p99": {
+            "median": 916.2109999999998,
+            "minimum": 850.2159999999999,
+            "maximum": 953.2150000000001,
+            "sample_count": 3
+          }
+        },
+        "throughput_requests_per_second": {
+          "median": 342.56382991842867,
+          "minimum": 337.5625418999505,
+          "maximum": 350.75867347278796,
+          "sample_count": 3
+        }
+      }
+    },
+    {
+      "name": "closed-loop-delay-1ms",
+      "status": "complete",
+      "expected_runs": 3,
+      "successful_runs": 3,
+      "runs": [
+        {
+          "name": "closed-loop-delay-1ms",
+          "repetition": 1,
+          "status": "succeeded",
+          "csv": "/home/sumedhpimplikar/Desktop/InferServe/experiment-results/phase-10-4/revised-delay-1ms/closed-loop-delay-1ms/run-1/requests.csv",
+          "metadata": "/home/sumedhpimplikar/Desktop/InferServe/experiment-results/phase-10-4/revised-delay-1ms/closed-loop-delay-1ms/run-1/requests.csv.metadata.json",
+          "latency_percentiles": {
+            "p50": 11.913000000000466,
+            "p95": 12.442000000000007,
+            "p99": 12.65099999999984
+          },
+          "throughput_requests_per_second": 83.89052018665976,
+          "detail": "",
+          "exit_code": 0
+        },
+        {
+          "name": "closed-loop-delay-1ms",
+          "repetition": 2,
+          "status": "succeeded",
+          "csv": "/home/sumedhpimplikar/Desktop/InferServe/experiment-results/phase-10-4/revised-delay-1ms/closed-loop-delay-1ms/run-2/requests.csv",
+          "metadata": "/home/sumedhpimplikar/Desktop/InferServe/experiment-results/phase-10-4/revised-delay-1ms/closed-loop-delay-1ms/run-2/requests.csv.metadata.json",
+          "latency_percentiles": {
+            "p50": 11.932000000000698,
+            "p95": 12.534000000000106,
+            "p99": 12.778000000000247
+          },
+          "throughput_requests_per_second": 83.75193948553863,
+          "detail": "",
+          "exit_code": 0
+        },
+        {
+          "name": "closed-loop-delay-1ms",
+          "repetition": 3,
+          "status": "succeeded",
+          "csv": "/home/sumedhpimplikar/Desktop/InferServe/experiment-results/phase-10-4/revised-delay-1ms/closed-loop-delay-1ms/run-3/requests.csv",
+          "metadata": "/home/sumedhpimplikar/Desktop/InferServe/experiment-results/phase-10-4/revised-delay-1ms/closed-loop-delay-1ms/run-3/requests.csv.metadata.json",
+          "latency_percentiles": {
+            "p50": 12.087000000000444,
+            "p95": 12.676000000001295,
+            "p99": 12.870999999999185
+          },
+          "throughput_requests_per_second": 82.75491783512473,
+          "detail": "",
+          "exit_code": 0
+        }
+      ],
+      "aggregate": {
+        "latency_ms": {
+          "p50": {
+            "median": 11.932000000000698,
+            "minimum": 11.913000000000466,
+            "maximum": 12.087000000000444,
+            "sample_count": 3
+          },
+          "p95": {
+            "median": 12.534000000000106,
+            "minimum": 12.442000000000007,
+            "maximum": 12.676000000001295,
+            "sample_count": 3
+          },
+          "p99": {
+            "median": 12.778000000000247,
+            "minimum": 12.65099999999984,
+            "maximum": 12.870999999999185,
+            "sample_count": 3
+          }
+        },
+        "throughput_requests_per_second": {
+          "median": 83.75193948553863,
+          "minimum": 82.75491783512473,
+          "maximum": 83.89052018665976,
+          "sample_count": 3
+        }
+      }
+    }
+  ]
+}
