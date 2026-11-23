@@ -1,0 +1,17 @@
+{
+  "load_generator": "../build/debug/inferserve_load_generator",
+  "output_dir": "../experiment-results/phase-10-1/synthetic-off",
+  "runs": [
+    {
+      "name": "synthetic-off",
+      "pattern": "fixed-rate",
+      "count": 1100,
+      "rate": 500,
+      "warmup_count": 100,
+      "http": {
+        "host": "127.0.0.1",
+        "port": 18080
+      }
+    }
+  ]
+}

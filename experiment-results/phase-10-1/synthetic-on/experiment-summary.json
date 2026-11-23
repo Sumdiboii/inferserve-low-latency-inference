@@ -1,0 +1,90 @@
+{
+  "status": "complete",
+  "expected_runs_per_configuration": 3,
+  "configuration_count": 1,
+  "successful_runs": 3,
+  "failed_runs": 0,
+  "configurations": [
+    {
+      "name": "synthetic-on",
+      "status": "complete",
+      "expected_runs": 3,
+      "successful_runs": 3,
+      "runs": [
+        {
+          "name": "synthetic-on",
+          "repetition": 1,
+          "status": "succeeded",
+          "csv": "/home/sumedhpimplikar/InferServe/experiment-results/phase-10-1/synthetic-on/synthetic-on/run-1/requests.csv",
+          "metadata": "/home/sumedhpimplikar/InferServe/experiment-results/phase-10-1/synthetic-on/synthetic-on/run-1/requests.csv.metadata.json",
+          "latency_percentiles": {
+            "p50": 557.2139999999999,
+            "p95": 982.7080000000001,
+            "p99": 1022.6379999999999
+          },
+          "throughput_requests_per_second": 329.52349255359286,
+          "detail": "",
+          "exit_code": 0
+        },
+        {
+          "name": "synthetic-on",
+          "repetition": 2,
+          "status": "succeeded",
+          "csv": "/home/sumedhpimplikar/InferServe/experiment-results/phase-10-1/synthetic-on/synthetic-on/run-2/requests.csv",
+          "metadata": "/home/sumedhpimplikar/InferServe/experiment-results/phase-10-1/synthetic-on/synthetic-on/run-2/requests.csv.metadata.json",
+          "latency_percentiles": {
+            "p50": 520.2660000000001,
+            "p95": 921.7220000000002,
+            "p99": 954.846
+          },
+          "throughput_requests_per_second": 337.4399778639375,
+          "detail": "",
+          "exit_code": 0
+        },
+        {
+          "name": "synthetic-on",
+          "repetition": 3,
+          "status": "succeeded",
+          "csv": "/home/sumedhpimplikar/InferServe/experiment-results/phase-10-1/synthetic-on/synthetic-on/run-3/requests.csv",
+          "metadata": "/home/sumedhpimplikar/InferServe/experiment-results/phase-10-1/synthetic-on/synthetic-on/run-3/requests.csv.metadata.json",
+          "latency_percentiles": {
+            "p50": 529.7249999999999,
+            "p95": 967.0070000000001,
+            "p99": 1002.3690000000001
+          },
+          "throughput_requests_per_second": 332.98325693587475,
+          "detail": "",
+          "exit_code": 0
+        }
+      ],
+      "aggregate": {
+        "latency_ms": {
+          "p50": {
+            "median": 529.7249999999999,
+            "minimum": 520.2660000000001,
+            "maximum": 557.2139999999999,
+            "sample_count": 3
+          },
+          "p95": {
+            "median": 967.0070000000001,
+            "minimum": 921.7220000000002,
+            "maximum": 982.7080000000001,
+            "sample_count": 3
+          },
+          "p99": {
+            "median": 1002.3690000000001,
+            "minimum": 954.846,
+            "maximum": 1022.6379999999999,
+            "sample_count": 3
+          }
+        },
+        "throughput_requests_per_second": {
+          "median": 332.98325693587475,
+          "minimum": 329.52349255359286,
+          "maximum": 337.4399778639375,
+          "sample_count": 3
+        }
+      }
+    }
+  ]
+}

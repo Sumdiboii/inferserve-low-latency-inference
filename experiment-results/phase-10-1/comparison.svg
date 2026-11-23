@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="520" viewBox="0 0 1000 520">
+<rect width="1000" height="520" fill="white"/>
+<text x="500" y="28" text-anchor="middle" font-size="20">Phase 10.1: Batching off vs. batching on</text>
+<text x="280" y="50" text-anchor="middle" font-size="15">Completion latency (median, ms)</text>
+<text x="730" y="50" text-anchor="middle" font-size="15">Successful throughput (median, req/s)</text>
+<rect x="70" y="82.5" width="55" height="152.5" fill="#2878b5"/>
+<text x="97" y="76.5" text-anchor="middle" font-size="10">942.2</text>
+<text x="97" y="253" text-anchor="middle" font-size="11">Synthetic off</text>
+<rect x="165" y="78.5" width="55" height="156.5" fill="#5ba7d1"/>
+<text x="192" y="72.5" text-anchor="middle" font-size="10">967.0</text>
+<text x="192" y="253" text-anchor="middle" font-size="11">Synthetic on</text>
+<rect x="260" y="232.7" width="55" height="2.3" fill="#e1812c"/>
+<text x="287" y="226.7" text-anchor="middle" font-size="10">14.2</text>
+<text x="287" y="253" text-anchor="middle" font-size="11">ONNX off</text>
+<rect x="355" y="233.0" width="55" height="2.0" fill="#f0b16b"/>
+<text x="382" y="227.0" text-anchor="middle" font-size="10">12.3</text>
+<text x="382" y="253" text-anchor="middle" font-size="11">ONNX on</text>
+<line x1="70" y1="235" x2="490" y2="235" stroke="#333"/>
+<text x="70" y="47" font-size="11">p95</text>
+<rect x="520" y="125.3" width="55" height="109.7" fill="#2878b5"/>
+<text x="547" y="119.3" text-anchor="middle" font-size="10">335.2</text>
+<text x="547" y="253" text-anchor="middle" font-size="11">Synthetic off</text>
+<rect x="615" y="126.0" width="55" height="109.0" fill="#5ba7d1"/>
+<text x="642" y="120.0" text-anchor="middle" font-size="10">333.0</text>
+<text x="642" y="253" text-anchor="middle" font-size="11">Synthetic on</text>
+<rect x="710" y="71.3" width="55" height="163.7" fill="#e1812c"/>
+<text x="737" y="65.3" text-anchor="middle" font-size="10">500.2</text>
+<text x="737" y="253" text-anchor="middle" font-size="11">ONNX off</text>
+<rect x="805" y="71.3" width="55" height="163.7" fill="#f0b16b"/>
+<text x="832" y="65.3" text-anchor="middle" font-size="10">500.2</text>
+<text x="832" y="253" text-anchor="middle" font-size="11">ONNX on</text>
+<line x1="520" y1="235" x2="940" y2="235" stroke="#333"/>
+<text x="70" y="285" font-size="15" font-weight="bold">Three-run median (p50 / p99 / throughput)</text>
+<rect x="70" y="298" width="860" height="34" fill="#2878b5" opacity="0.12"/>
+<text x="85" y="320" font-size="13">Synthetic off</text>
+<text x="300" y="320" font-size="13">p50 535.617 ms</text>
+<text x="500" y="320" font-size="13">p99 977.601 ms</text>
+<text x="700" y="320" font-size="13">335.169 req/s</text>
+<rect x="70" y="340" width="860" height="34" fill="#5ba7d1" opacity="0.12"/>
+<text x="85" y="362" font-size="13">Synthetic on</text>
+<text x="300" y="362" font-size="13">p50 529.725 ms</text>
+<text x="500" y="362" font-size="13">p99 1002.369 ms</text>
+<text x="700" y="362" font-size="13">332.983 req/s</text>
+<rect x="70" y="382" width="860" height="34" fill="#e1812c" opacity="0.12"/>
+<text x="85" y="404" font-size="13">ONNX off</text>
+<text x="300" y="404" font-size="13">p50 1.048 ms</text>
+<text x="500" y="404" font-size="13">p99 21.601 ms</text>
+<text x="700" y="404" font-size="13">500.244 req/s</text>
+<rect x="70" y="424" width="860" height="34" fill="#f0b16b" opacity="0.12"/>
+<text x="85" y="446" font-size="13">ONNX on</text>
+<text x="300" y="446" font-size="13">p50 1.084 ms</text>
+<text x="500" y="446" font-size="13">p99 17.056 ms</text>
+<text x="700" y="446" font-size="13">500.220 req/s</text>
+<text x="70" y="500" font-size="11">All runs completed 1000 measured requests with zero failed, rejected, terminal-failure, or undispatched requests.</text>
+</svg>

@@ -1,0 +1,90 @@
+{
+  "status": "complete",
+  "expected_runs_per_configuration": 3,
+  "configuration_count": 1,
+  "successful_runs": 3,
+  "failed_runs": 0,
+  "configurations": [
+    {
+      "name": "onnx-off",
+      "status": "complete",
+      "expected_runs": 3,
+      "successful_runs": 3,
+      "runs": [
+        {
+          "name": "onnx-off",
+          "repetition": 1,
+          "status": "succeeded",
+          "csv": "/home/sumedhpimplikar/InferServe/experiment-results/phase-10-1/onnx-off/onnx-off/run-1/requests.csv",
+          "metadata": "/home/sumedhpimplikar/InferServe/experiment-results/phase-10-1/onnx-off/onnx-off/run-1/requests.csv.metadata.json",
+          "latency_percentiles": {
+            "p50": 0.8789999999999054,
+            "p95": 13.950000000000045,
+            "p99": 21.210000000000036
+          },
+          "throughput_requests_per_second": 500.24612109157704,
+          "detail": "",
+          "exit_code": 0
+        },
+        {
+          "name": "onnx-off",
+          "repetition": 2,
+          "status": "succeeded",
+          "csv": "/home/sumedhpimplikar/InferServe/experiment-results/phase-10-1/onnx-off/onnx-off/run-2/requests.csv",
+          "metadata": "/home/sumedhpimplikar/InferServe/experiment-results/phase-10-1/onnx-off/onnx-off/run-2/requests.csv.metadata.json",
+          "latency_percentiles": {
+            "p50": 1.1330000000000382,
+            "p95": 17.139999999999986,
+            "p99": 29.654999999999973
+          },
+          "throughput_requests_per_second": 497.642419039799,
+          "detail": "",
+          "exit_code": 0
+        },
+        {
+          "name": "onnx-off",
+          "repetition": 3,
+          "status": "succeeded",
+          "csv": "/home/sumedhpimplikar/InferServe/experiment-results/phase-10-1/onnx-off/onnx-off/run-3/requests.csv",
+          "metadata": "/home/sumedhpimplikar/InferServe/experiment-results/phase-10-1/onnx-off/onnx-off/run-3/requests.csv.metadata.json",
+          "latency_percentiles": {
+            "p50": 1.0480000000000018,
+            "p95": 14.159000000000106,
+            "p99": 21.601000000000113
+          },
+          "throughput_requests_per_second": 500.24386888608194,
+          "detail": "",
+          "exit_code": 0
+        }
+      ],
+      "aggregate": {
+        "latency_ms": {
+          "p50": {
+            "median": 1.0480000000000018,
+            "minimum": 0.8789999999999054,
+            "maximum": 1.1330000000000382,
+            "sample_count": 3
+          },
+          "p95": {
+            "median": 14.159000000000106,
+            "minimum": 13.950000000000045,
+            "maximum": 17.139999999999986,
+            "sample_count": 3
+          },
+          "p99": {
+            "median": 21.601000000000113,
+            "minimum": 21.210000000000036,
+            "maximum": 29.654999999999973,
+            "sample_count": 3
+          }
+        },
+        "throughput_requests_per_second": {
+          "median": 500.24386888608194,
+          "minimum": 497.642419039799,
+          "maximum": 500.24612109157704,
+          "sample_count": 3
+        }
+      }
+    }
+  ]
+}

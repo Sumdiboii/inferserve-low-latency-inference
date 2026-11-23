@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="440" viewBox="0 0 720 440">
+<rect width="100%" height="100%" fill="white"/>
+<text x="360" y="32" text-anchor="middle" font-family="sans-serif" font-size="20">Request latency by backend</text>
+<text x="22" y="203" text-anchor="middle" transform="rotate(-90 22 203)" font-family="sans-serif" font-size="14">Latency (ms)</text>
+<line x1="82" y1="344" x2="696" y2="344" stroke="#dddddd"/>
+<text x="72" y="348" text-anchor="end" font-family="sans-serif" font-size="11">0.0</text>
+<line x1="82" y1="273.5" x2="696" y2="273.5" stroke="#dddddd"/>
+<text x="72" y="277.5" text-anchor="end" font-family="sans-serif" font-size="11">294.0</text>
+<line x1="82" y1="203" x2="696" y2="203" stroke="#dddddd"/>
+<text x="72" y="207" text-anchor="end" font-family="sans-serif" font-size="11">588.0</text>
+<line x1="82" y1="132.5" x2="696" y2="132.5" stroke="#dddddd"/>
+<text x="72" y="136.5" text-anchor="end" font-family="sans-serif" font-size="11">882.0</text>
+<line x1="82" y1="62" x2="696" y2="62" stroke="#dddddd"/>
+<text x="72" y="66" text-anchor="end" font-family="sans-serif" font-size="11">1176.0</text>
+<line x1="82" y1="62" x2="82" y2="344" stroke="#333333"/>
+<line x1="82" y1="344" x2="696" y2="344" stroke="#333333"/>
+<text x="184.333" y="368" text-anchor="middle" font-family="sans-serif" font-size="13">p50</text>
+<rect x="135.833" y="210.386" width="46" height="133.614" fill="#2878b5"/>
+<text x="158.833" y="205.386" text-anchor="middle" font-family="sans-serif" font-size="10">557.21</text>
+<rect x="186.833" y="343.783" width="46" height="0.217009" fill="#e1812c"/>
+<text x="209.833" y="338.783" text-anchor="middle" font-family="sans-serif" font-size="10">0.90</text>
+<text x="389" y="368" text-anchor="middle" font-family="sans-serif" font-size="13">p95</text>
+<rect x="340.5" y="108.357" width="46" height="235.643" fill="#2878b5"/>
+<text x="363.5" y="103.357" text-anchor="middle" font-family="sans-serif" font-size="10">982.71</text>
+<rect x="391.5" y="341.134" width="46" height="2.86572" fill="#e1812c"/>
+<text x="414.5" y="336.134" text-anchor="middle" font-family="sans-serif" font-size="10">11.95</text>
+<text x="593.667" y="368" text-anchor="middle" font-family="sans-serif" font-size="13">p99</text>
+<rect x="545.167" y="98.7826" width="46" height="245.217" fill="#2878b5"/>
+<text x="568.167" y="93.7826" text-anchor="middle" font-family="sans-serif" font-size="10">1022.64</text>
+<rect x="596.167" y="339.91" width="46" height="4.08984" fill="#e1812c"/>
+<text x="619.167" y="334.91" text-anchor="middle" font-family="sans-serif" font-size="10">17.06</text>
+<rect x="187" y="401" width="14" height="14" fill="#2878b5"/>
+<text x="208" y="413" text-anchor="start" font-family="sans-serif" font-size="12">Synthetic</text>
+<rect x="397" y="401" width="14" height="14" fill="#e1812c"/>
+<text x="418" y="413" text-anchor="start" font-family="sans-serif" font-size="12">ONNX Runtime CPU</text>
+</svg>

@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="560" height="400" viewBox="0 0 560 400">
+<rect width="100%" height="100%" fill="white"/>
+<text x="280" y="32" text-anchor="middle" font-family="sans-serif" font-size="20">Completed-dispatch throughput by backend</text>
+<text x="22" y="188" text-anchor="middle" transform="rotate(-90 22 188)" font-family="sans-serif" font-size="14">Requests per second</text>
+<line x1="82" y1="314" x2="530" y2="314" stroke="#dddddd"/>
+<text x="72" y="318" text-anchor="end" font-family="sans-serif" font-size="11">0.0</text>
+<line x1="82" y1="251" x2="530" y2="251" stroke="#dddddd"/>
+<text x="72" y="255" text-anchor="end" font-family="sans-serif" font-size="11">143.8</text>
+<line x1="82" y1="188" x2="530" y2="188" stroke="#dddddd"/>
+<text x="72" y="192" text-anchor="end" font-family="sans-serif" font-size="11">287.7</text>
+<line x1="82" y1="125" x2="530" y2="125" stroke="#dddddd"/>
+<text x="72" y="129" text-anchor="end" font-family="sans-serif" font-size="11">431.5</text>
+<line x1="82" y1="62" x2="530" y2="62" stroke="#dddddd"/>
+<text x="72" y="66" text-anchor="end" font-family="sans-serif" font-size="11">575.3</text>
+<line x1="82" y1="314" x2="530" y2="314" stroke="#333333"/>
+<rect x="149" y="169.664" width="90" height="144.336" fill="#2878b5"/>
+<text x="194" y="163.664" text-anchor="middle" font-family="sans-serif" font-size="13">329.52</text>
+<text x="194" y="339" text-anchor="middle" font-family="sans-serif" font-size="13">Synthetic</text>
+<rect x="373" y="94.8696" width="90" height="219.13" fill="#e1812c"/>
+<text x="418" y="88.8696" text-anchor="middle" font-family="sans-serif" font-size="13">500.28</text>
+<text x="418" y="339" text-anchor="middle" font-family="sans-serif" font-size="13">ONNX Runtime CPU</text>
+<text x="280" y="377" text-anchor="middle" font-family="sans-serif" font-size="11">Dispatched requests completed by generator / elapsed seconds</text>
+</svg>
