@@ -1,5 +1,5 @@
 {
-  "load_generator": "../build/phase-10-2/inferserve_load_generator",
+  "load_generator": "../build/debug/inferserve_load_generator",
   "output_dir": "../experiment-results/phase-10-4",
   "runs": [
     {

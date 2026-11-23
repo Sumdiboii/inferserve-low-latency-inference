@@ -15,8 +15,8 @@
           "name": "synthetic-on",
           "repetition": 1,
           "status": "succeeded",
-          "csv": "/home/sumedhpimplikar/Desktop/InferServe/experiment-results/phase-10-1/synthetic-on/synthetic-on/run-1/requests.csv",
-          "metadata": "/home/sumedhpimplikar/InferServe/experiment-results/phase-10-1/synthetic-on/synthetic-on/run-1/requests.csv.metadata.json",
+          "csv": "synthetic-on/run-1/requests.csv",
+          "metadata": "synthetic-on/run-1/requests.csv.metadata.json",
           "latency_percentiles": {
             "p50": 557.2139999999999,
             "p95": 982.7080000000001,
@@ -30,8 +30,8 @@
           "name": "synthetic-on",
           "repetition": 2,
           "status": "succeeded",
-          "csv": "/home/sumedhpimplikar/Desktop/InferServe/experiment-results/phase-10-1/synthetic-on/synthetic-on/run-2/requests.csv",
-          "metadata": "/home/sumedhpimplikar/InferServe/experiment-results/phase-10-1/synthetic-on/synthetic-on/run-2/requests.csv.metadata.json",
+          "csv": "synthetic-on/run-2/requests.csv",
+          "metadata": "synthetic-on/run-2/requests.csv.metadata.json",
           "latency_percentiles": {
             "p50": 520.2660000000001,
             "p95": 921.7220000000002,
@@ -45,8 +45,8 @@
           "name": "synthetic-on",
           "repetition": 3,
           "status": "succeeded",
-          "csv": "/home/sumedhpimplikar/Desktop/InferServe/experiment-results/phase-10-1/synthetic-on/synthetic-on/run-3/requests.csv",
-          "metadata": "/home/sumedhpimplikar/InferServe/experiment-results/phase-10-1/synthetic-on/synthetic-on/run-3/requests.csv.metadata.json",
+          "csv": "synthetic-on/run-3/requests.csv",
+          "metadata": "synthetic-on/run-3/requests.csv.metadata.json",
           "latency_percentiles": {
             "p50": 529.7249999999999,
             "p95": 967.0070000000001,

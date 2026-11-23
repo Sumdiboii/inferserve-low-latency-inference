@@ -8,9 +8,10 @@ policy affects throughput and tail latency. This document describes the
 
 The server core owns request admission, bounded queues, batching, dispatch,
 execution coordination, and server-side measurements. HTTP is an adapter at
-the edge, not part of core inference logic. The load generator is a separate,
-open-loop component/process, so it measures the server without client-side
-closed-loop feedback masking overload or tail latency.
+the edge, not part of core inference logic. The load generator is a separate
+process. Phase 10 uses its fixed-rate open-loop mode for independently
+scheduled arrivals; a completion-coupled closed-loop mode is also available
+for the mechanism-level comparison described below.
 
 The inference backend is also behind a boundary. A synthetic backend provides
 controlled, explicitly non-model work for experiments; it must never be
@@ -20,7 +21,7 @@ only executes an already dispatched batch.
 
 ```mermaid
 flowchart LR
-    subgraph LG[Separate process: open-loop load generator]
+    subgraph LG[Separate process: load generator]
         Arrival[Configured request arrivals]
         ClientMetrics[Client-side results]
         Arrival --> HTTPClient[HTTP client]
@@ -50,10 +51,16 @@ server module and does not share the server’s scheduling or metrics state.
 
 ## Intended request lifecycle
 
-Admission is the decision to accept or reject a received request. Execution
-begins only after acceptance and later scheduling. Queue capacity counts
-waiting requests, not requests already in flight. Both queues are bounded and
-their overload behavior must be explicit when their phases are implemented.
+Admission is the decision to accept or reject a received request. The HTTP
+adapter validates the request and returns an admission response; HTTP 202
+means that the request was accepted, not that inference has completed.
+Execution begins only after acceptance and later scheduling. The admission
+queue and batch-dispatch queue each have capacity 1024, and queue capacity
+counts waiting work rather than work already executing. Invalid input,
+queue-full admission, and shutdown are rejected explicitly. A dispatch-queue
+overflow becomes a terminal completion failure. Accepted work is then
+completed by the backend and exposed through the completion registry for
+`/results/{request_id}` polling.
 
 ```mermaid
 flowchart TD
@@ -76,9 +83,11 @@ flowchart TD
     Drain --> Complete
 ```
 
-The exact rejection status, dispatch-full behavior, and shutdown policy details
-remain implementation decisions. The intended guarantee is that shutdown can
-drain outstanding accepted work rather than discarding it implicitly.
+The runtime stops admission, drains the batcher, then drains and joins the
+worker pool so accepted work is not silently discarded. The HTTP status and
+JSON response details are implementation-level protocol behavior; benchmark
+results should use the recorded success, failure, rejection, and undispatched
+fields rather than infer completion from admission alone.
 
 ## Components and responsibilities
 
@@ -93,7 +102,7 @@ drain outstanding accepted work rather than discarding it implicitly.
 | Worker pool and scheduler | Select workers and run dispatched batches | Batch-formation policy or transport concerns | 5 — Worker pool and dispatch queue |
 | ONNX Runtime CPU backend | Execute real CPU model inference for a supplied batch | Admission, queue ownership, scheduling decisions | 6 — ONNX Runtime CPU backend |
 | Thin HTTP adapter | Translate HTTP requests/responses to and from core lifecycle operations | Core queue, batching, scheduling, or inference policies | 7 — HTTP adapter |
-| Open-loop load generator | Generate independently scheduled arrivals and client-observed measurements | Server queues, server scheduling, or server metric ownership | 8 — Open-loop load generator |
+| Load generator | Generate open-loop or completion-coupled closed-loop arrivals and client-observed measurements | Server queues, server scheduling, or server metric ownership | 8 — Open-loop load generator |
 | Metrics and reporting | Record and report measurement definitions and benchmark conditions | Altering workload or scheduling behavior | 9 — Metrics, reporting and methodology hardening |
 | Experiments | Run documented comparisons of policies and conditions | Quietly changing architecture or methodology | 10 — Experiments |
 | Profiling and one real optimization | Profile and improve one demonstrated bottleneck with before/after evidence | Broad speculative rewrites | 11 — Profiling and one real optimization |
@@ -101,21 +110,53 @@ drain outstanding accepted work rather than discarding it implicitly.
 
 ## Measurement model
 
-Server-side measurement is intended to distinguish end-to-end latency from
-queueing, batching, dispatch, and backend latency. These intervals must have
-documented boundaries when instrumentation is introduced; this document does
-not prescribe timestamp implementation details.
+The load generator's completion latency is measured from the scheduled arrival
+to the completion observed by the client. It includes client scheduling delay,
+HTTP connection setup/teardown, the admission request, completion polling, and
+polling detection delay. It is therefore a client-observed end-to-end measure,
+not backend execution time. Backend execution and internal queue intervals are
+not exported in the Phase 10 CSV format.
 
-Load-generator measurements are distinct: they observe arrivals and outcomes
-from outside the server. Its open-loop schedule avoids coordinated omission,
-where a closed-loop client slows submission after slow responses and therefore
-under-samples overload. Server and client results should be reported together,
-not silently substituted for one another.
+In open-loop mode, arrivals are scheduled independently of earlier
+completions. The four HTTP workers may send late when their pending work is
+busy; `dispatch_lag_ms` records actual send time minus scheduled arrival and
+therefore includes client scheduling and transport effects as well as pressure
+visible at the client. In closed-loop mode, one request is sent and completed
+before the next is scheduled, so its effective offered rate falls as
+completion latency rises. The two modes are not rate-matched workloads.
+
+This difference is the coordinated-omission mechanism: a completion-coupled
+client does not issue arrivals during a slow interval and can under-sample the
+queueing and tail latency that an independently scheduled client observes.
+Phase 10.4 supports that mechanism-level interpretation only. Its runs did not
+provide a controlled sustained slowdown or a rate-matched causal estimate of
+the bias.
+
+For the benchmark reports, throughput is the generator-side estimate of
+successful dispatched measured requests divided by the measured completion
+window. Warmup rows remain in the CSV but are excluded from latency,
+throughput, and failure summaries. `success` describes a completed inference;
+HTTP rejection and terminal failure are separate outcomes, while
+`undispatched` identifies requests never sent by the generator. These fields
+must be reported explicitly rather than treating an HTTP 202 admission as a
+successful completion.
 
 Benchmark conditions must be reproducible and documented, including workload
 shape, arrival process, batching policy, queue capacities, worker settings,
 backend choice, model details when applicable, hardware/software environment,
 and measurement definitions.
+
+The Phase 10 CSV and sidecars do not export a batch-size distribution or a
+per-request batch identifier, so batch aggregation cannot be verified from
+those artifacts. Phase 10.3 showed increased latency and dispatch-lag
+variability at higher offered rates, but achieved throughput continued to track
+offered load through 3,000 RPS; it therefore does not establish a clear
+throughput plateau or definitive saturation point.
+
+The experiment runner resolves output directories and writes absolute `csv`
+and `metadata` path strings into newly generated summary JSON. This is current
+runner behavior and makes those fields checkout-specific; checked-in summaries
+may normalize them to relative paths for portability without changing results.
 
 ## Backend ownership and concurrency
 
@@ -199,7 +240,8 @@ reference test compares in request order using `atol=1e-6` and `rtol=1e-5`.
 3. Shutdown supports draining outstanding accepted work.
 4. Measurements distinguish end-to-end, queueing, batching, dispatch, and backend latency.
 5. Synthetic inference is explicitly synthetic, never real model inference.
-6. The load generator is separate and open-loop to avoid coordinated omission.
+6. The load generator is separate; open-loop is the default experiment mode,
+   and closed-loop mode is available for explicitly rate-uncoupled comparisons.
 7. Benchmark conditions are reproducible and documented.
 8. Scheduling is separate from backend execution.
 9. HTTP transport is separate from the core inference system.

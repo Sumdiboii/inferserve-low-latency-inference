@@ -1,5 +1,5 @@
 {
-  "load_generator": "../build/phase-10-2/inferserve_load_generator",
+  "load_generator": "../build/debug/inferserve_load_generator",
   "output_dir": "../experiment-results/phase-10-3",
   "runs": [
     { "name": "rate-100", "pattern": "fixed-rate", "count": 1100, "rate": 100, "warmup_count": 100, "http": { "host": "127.0.0.1", "port": 18200 } },
