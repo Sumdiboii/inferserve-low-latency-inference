@@ -12,14 +12,11 @@ GoogleTest.
 | Dependency | Pin and source | Acquisition |
 | --- | --- | --- |
 | GoogleTest | `v1.15.2`, commit `b514bdc898e2951020cbdca1304b75f5950d1f59` from [google/googletest](https://github.com/google/googletest) | CMake FetchContent, only with `BUILD_TESTING=ON` |
-| cpp-httplib (unused optional download) | `v0.58.0`, [official tag header](https://raw.githubusercontent.com/yhirose/cpp-httplib/v0.58.0/httplib.h), SHA-256 `aa14e7e7bd2703694e0a6b6855af3b8c406102ab1fc56ac905fe33619b31faa5` | `scripts/download_cpp_httplib.sh`; not used by current targets |
 | ONNX Runtime CPU | `1.20.1`, [NuGet package](https://www.nuget.org/packages/Microsoft.ML.OnnxRuntime/1.20.1), SHA-256 `9c32108e9a1c78b090a95c2a219f244dd5f067d4caf68fb0f967103f3f20839c` | `scripts/download_onnxruntime.sh` |
 
-GoogleTest supplies tests. The current HTTP server uses POSIX sockets, so
-cpp-httplib is not required or linked by CMake. ONNX Runtime CPU provides the
-server's inference backend. The GoogleTest tag was checked against upstream;
-cpp-httplib's header comes from its official tagged source because it is not a
-matching release asset.
+GoogleTest supplies tests. The current HTTP server uses POSIX sockets, and
+ONNX Runtime CPU provides the server's inference backend. The GoogleTest tag
+was checked against upstream.
 
 The two SHA-256 values are local integrity pins computed from these upstream
 bytes, not upstream-authenticated checksums or signatures; they detect changed

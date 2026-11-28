@@ -7,6 +7,10 @@ CMakeCache.txt
 cmake_install.cmake
 compile_commands.json
 
+# Python bytecode and test caches
+__pycache__/
+*.py[cod]
+
 # Compiled artifacts
 *.o
 *.obj

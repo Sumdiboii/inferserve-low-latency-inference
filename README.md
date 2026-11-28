@@ -612,6 +612,13 @@ the load-generator executors, transport, CSV export, dispatch lag, traffic
 patterns, and performance statistics. CTest also registers the Python parser
 and experiment-runner tests.
 
+Latest local verification (2026-11-28): the Debug build was cleaned and rebuilt
+from scratch, then all 119 discovered CTest tests passed. The standalone ONNX
+Runtime batch benchmark also completed for batch sizes 1 and 3 with output
+checksum `3850.000000`; its one-run latency sample is recorded in
+[`benchmarks/README.md`](benchmarks/README.md). That microbenchmark is a smoke
+measurement and should not be treated as a portable performance baseline.
+
 Run the full configured test suite with:
 
 ```sh
@@ -658,7 +665,6 @@ claims about production performance or superiority over other serving systems.
 | C++20 | Server, runtime, backend, and load generator | Precise ownership, concurrency, and low-level timing control. |
 | CMake + Ninja | Configure and build | Reproducible Debug, Release, ASan, and TSan workflows. |
 | ONNX Runtime 1.20.1 | CPU inference backend | Real model execution behind the backend boundary. |
-| `cpp-httplib` | Optional, unused dependency download | The current targets use the repository's own socket-based HTTP implementation; this header is not linked by CMake. See [`docs/DEPENDENCIES.md`](docs/DEPENDENCIES.md). |
 | GoogleTest | C++ tests | Exercises lifecycle, queues, runtime, HTTP, and load-generator behavior. |
 | Python 3 | Runner, plotting, and dependency validation | Small standard-library tools preserve experiment artifacts. |
 | Linux tools | Bash, `wget`, `sha256sum`, CTest | Supports dependency setup and native validation. |
